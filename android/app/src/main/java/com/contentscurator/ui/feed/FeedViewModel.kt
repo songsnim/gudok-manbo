@@ -29,7 +29,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _uiState.value = FeedUiState.Loading
             runCatching {
-                val items = repo.getTodayFeed()
+                val items = repo.getAllItems()
                 val readSlugs = repo.getAllReadSlugs()
                 _uiState.value = FeedUiState.Success(items, readSlugs)
             }.onFailure {
