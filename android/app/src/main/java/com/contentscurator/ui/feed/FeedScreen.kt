@@ -42,7 +42,7 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("오늘의 피드") },
+                title = { Text("컨텐츠 피드") },
                 actions = {
                     IconButton(onClick = { vm.load() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "새로고침")
@@ -64,7 +64,7 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
                 }
                 is FeedUiState.Success -> {
                     if (s.items.isEmpty()) {
-                        Text("오늘 수집된 아이템이 없습니다.", Modifier.align(Alignment.Center))
+                        Text("수집된 아이템이 없습니다.", Modifier.align(Alignment.Center))
                     } else {
                         LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
                             items(s.items, key = { it.slug }) { item ->
