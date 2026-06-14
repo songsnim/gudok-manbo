@@ -1,0 +1,40 @@
+# ── Secrets / 개인정보 (절대 커밋 금지) ──────────────────────────────────
+.env
+**/.env
+!**/.env.example
+
+# 런타임 데이터 (개인 구독, 세션 쿠키, 계정 DB, 로그)
+backend/data/*.json
+backend/data/*.db
+backend/data/logs/
+!backend/data/subscriptions.example.json
+
+# Android 서명 키스토어
+*.jks
+*.keystore
+keystore.properties
+keystore/
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# ── Android / Gradle ─────────────────────────────────────────────────────
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+*.iml
+.idea/
+
+# ── 에이전트 툴링 (공개 앱 레포와 무관한 노이즈) ──────────────────────────
+.claude/
+.agents/
+skills-lock.json
+
+# ── 기타 ─────────────────────────────────────────────────────────────────
+.DS_Store

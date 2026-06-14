@@ -1,0 +1,22 @@
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "platform": "youtube",
+    "author": "example-channel",
+    "channel_id": "UCxxxxxxxxxxxxxxxxxxxxxx",
+    "feed_url": null,
+    "username": null,
+    "avatar_url": null,
+    "priority": 1
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000002",
+    "platform": "substack",
+    "author": "Example Newsletter",
+    "channel_id": null,
+    "feed_url": null,
+    "username": "example",
+    "avatar_url": null,
+    "priority": 2
+  }
+]
