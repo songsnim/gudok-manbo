@@ -6,6 +6,8 @@
 # 런타임 데이터 (개인 구독, 세션 쿠키, 계정 DB, 로그)
 backend/data/*.json
 backend/data/*.db
+backend/data/*.log
+backend/data/tunnel_url.txt
 backend/data/logs/
 !backend/data/subscriptions.example.json
 

@@ -22,6 +22,21 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - 자동 수집 스케줄 등록(관리자 PowerShell): `backend/register_tasks.ps1` — PC를 정해진 시각에 깨워 수집.
 - 런타임 데이터(`.env`, `data/*.json`, `data/*.db`, 세션 쿠키)는 커밋되지 않는다(`.gitignore`).
 
+### 집 밖에서 접속 (Cloudflare Quick Tunnel)
+
+집 밖(회사 등)에서 폰이 백엔드에 닿게 하려면 터널로 공개 주소를 연다.
+
+```powershell
+winget install --id Cloudflare.cloudflared   # 1회
+cd backend
+.\serve_remote.ps1                            # uvicorn + quick tunnel 실행, 공개 주소 출력
+.\register_autostart.ps1                      # (선택) 로그온 시 자동 실행 등록
+```
+
+- 출력된 `https://xxxx.trycloudflare.com/` 주소를 **폰 앱 [구독] 탭 > 설정(톱니) > "서버 주소"** 에 입력하면 끝(앱 재빌드 불필요).
+- ⚠️ quick tunnel 주소는 PC/터널 재시작 시 바뀐다. 바뀌면 새 주소를 앱 설정에 다시 입력.
+- ⚠️ 슬립 중에는 백엔드도 멈춘다 → 원격 접속은 PC가 깨어 있을 때만 가능(필요하면 전원 설정에서 슬립 끄기).
+
 ## 앱 빌드 / 배포
 
 릴리스 APK는 **GitHub Actions가 `main` push 시 자동 빌드·서명**해 GitHub Release에 첨부한다(`.github/workflows/release.yml`). 버전 코드는 빌드 번호로 자동 증가한다.
