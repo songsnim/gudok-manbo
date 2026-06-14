@@ -70,13 +70,16 @@ def update_subscription(sub_id: str, fields: dict) -> dict | None:
     return None
 
 
-def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3) -> int:
+def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, count: int | None = None) -> int:
     """구독 소스에서 최신글 수집. 수집된 아이템 수 반환.
 
-    respect_quota=True  : 스케줄 자동수집 — 일일 할당량까지만.
-    respect_quota=False : 수동 실행 — 할당량 무시, 모든 구독에서 최신글 수집.
+    count 지정         : 이번 실행에서 새 아이템을 그 개수만큼만 수집(할당량 무시).
+    respect_quota=True : 스케줄 자동수집 — 일일 할당량까지만.
+    respect_quota=False: 수동 실행 — 할당량 무시, 모든 구독에서 최신글 수집.
     """
-    if respect_quota:
+    if count is not None:
+        remaining = count  # 이번 실행 목표치
+    elif respect_quota:
         from app_settings import load_app_settings
         quota = load_app_settings()["daily_quota"]
         remaining = quota - count_today()
