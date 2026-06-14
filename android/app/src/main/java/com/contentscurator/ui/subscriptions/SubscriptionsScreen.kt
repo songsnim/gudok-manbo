@@ -37,6 +37,8 @@ import com.contentscurator.data.api.PreviewItem
 import com.contentscurator.data.api.SearchResult
 import com.contentscurator.data.api.Subscription
 import com.contentscurator.data.api.SubscriptionRequest
+import com.contentscurator.data.ServerPrefs
+import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -171,7 +173,18 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
     private val _dailyQuota = MutableStateFlow(10)
     val dailyQuota: StateFlow<Int> = _dailyQuota
 
+    private val _serverUrl = MutableStateFlow(ServerPrefs.load(app))
+    val serverUrl: StateFlow<String> = _serverUrl
+
     init { load(); loadSettings() }
+
+    fun saveServerUrl(url: String) {
+        val normalized = ServerPrefs.save(getApplication(), url)
+        RetrofitClient.setBaseUrl(normalized)
+        _serverUrl.value = normalized
+        _toast.value = "서버 주소 저장됨"
+        load(); loadSettings()  // 새 주소로 재시도
+    }
 
     fun loadSettings() = viewModelScope.launch {
         runCatching { _dailyQuota.value = repo.getSettings().daily_quota }
@@ -395,18 +408,35 @@ private fun PriorityChip(priority: Int, onClick: () -> Unit) {
 @Composable
 private fun QuotaDialog(vm: SubscriptionsViewModel, onDismiss: () -> Unit) {
     val quota by vm.dailyQuota.collectAsStateWithLifecycle()
+    val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     var text by remember(quota) { mutableStateOf(quota.toString()) }
+    var urlText by remember(serverUrl) { mutableStateOf(serverUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("일일 수집 할당량") },
+        title = { Text("설정") },
         text = {
             Column {
+                Text(
+                    "백엔드 서버 주소입니다. 집/외부(터널) 주소를 바꿀 때 입력하세요.",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.outline,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    label = { Text("서버 주소") },
+                    placeholder = { Text("http://192.168.0.10:8000/") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(20.dp))
                 Text(
                     "자동 수집 시 하루에 모을 글/영상 개수입니다.\n우선순위 높은 채널부터 채웁니다.",
                     fontSize = 13.sp, color = MaterialTheme.colorScheme.outline,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it.filter(Char::isDigit) },
@@ -420,7 +450,11 @@ private fun QuotaDialog(vm: SubscriptionsViewModel, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(
                 enabled = text.toIntOrNull()?.let { it > 0 } == true,
-                onClick = { text.toIntOrNull()?.let { vm.saveQuota(it) }; onDismiss() },
+                onClick = {
+                    if (urlText.isNotBlank() && urlText != serverUrl) vm.saveServerUrl(urlText)
+                    text.toIntOrNull()?.let { vm.saveQuota(it) }
+                    onDismiss()
+                },
             ) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
