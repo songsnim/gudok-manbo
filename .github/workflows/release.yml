@@ -19,8 +19,31 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Verify signing secrets present
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          miss=0
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD API_BASE_URL; do
+            if [ -z "${!v}" ]; then echo "::error::secret $v is EMPTY or missing"; miss=1; else echo "$v: set"; fi
+          done
+          exit $miss
+
+      - name: Decode and validate keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          ls -l "$RUNNER_TEMP/release.jks"
+          if keytool -list -keystore "$RUNNER_TEMP/release.jks" \
+               -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" >/dev/null 2>&1; then
+            echo "keystore + password + alias OK"
+          else
+            echo "::error::keystore invalid OR KEYSTORE_PASSWORD/KEY_ALIAS wrong"
+            exit 1
+          fi
 
       - name: Build signed release APK
         working-directory: android
