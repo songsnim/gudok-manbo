@@ -53,10 +53,35 @@ for ($i = 0; $i -lt 30; $i++) {
 
 if ($url) {
     "$url/" | Out-File (Join-Path $WorkDir "data\tunnel_url.txt") -Encoding ascii -NoNewline
+
+    # ── 고정 포인터(GitHub Gist) 자동 갱신 ───────────────────────────────────
+    # .env의 GITHUB_GIST_TOKEN/GIST_ID가 있으면 새 주소를 Gist에 기록한다.
+    # 폰 앱은 고정된 Gist raw 주소를 읽으므로, 주소가 바뀌어도 재입력이 필요 없다.
+    $token = $null; $gistId = $null
+    $envFile = Join-Path $WorkDir ".env"
+    if (Test-Path $envFile) {
+        foreach ($line in Get-Content $envFile) {
+            if ($line -match '^\s*GITHUB_GIST_TOKEN\s*=\s*(.+?)\s*$') { $token  = $Matches[1] }
+            if ($line -match '^\s*GIST_ID\s*=\s*(.+?)\s*$')          { $gistId = $Matches[1] }
+        }
+    }
+    if ($token -and $gistId) {
+        try {
+            $headers = @{ Authorization = "Bearer $token"; "User-Agent" = "contents-curator"; Accept = "application/vnd.github+json" }
+            $body = @{ files = @{ "backend_url.txt" = @{ content = "$url/" } } } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Method Patch -Uri "https://api.github.com/gists/$gistId" -Headers $headers -Body $body | Out-Null
+            Write-Host "Gist 갱신 완료 — 폰 앱이 새 주소를 자동으로 받습니다."
+        } catch {
+            Write-Host "Gist 갱신 실패: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "(.env에 GITHUB_GIST_TOKEN/GIST_ID 없음 — Gist 자동갱신 건너뜀, 수동 입력 필요)"
+    }
+
     Write-Host ""
     Write-Host "===================================================================="
     Write-Host " 공개 주소: $url/"
-    Write-Host " → 폰 앱 [구독] 탭 > 설정(톱니) > '서버 주소'에 위 주소를 입력하세요."
+    Write-Host " (Gist 자동갱신이 설정돼 있으면 앱이 알아서 이 주소를 받습니다.)"
     Write-Host " (data\tunnel_url.txt 에도 저장됨)"
     Write-Host "===================================================================="
 } else {
