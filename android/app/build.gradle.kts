@@ -26,6 +26,9 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = "1.0"
         buildConfigField("String", "API_BASE_URL", "\"${cfg("API_BASE_URL") ?: "http://10.0.2.2:8000/"}\"")
+        // 고정 포인터(공개 Gist raw). 앱이 여기서 현재 백엔드 주소를 자동으로 읽는다.
+        // 비밀이 아니라 기본값으로 둔다(env/local.properties로 덮어쓸 수 있음).
+        buildConfigField("String", "POINTER_URL", "\"${cfg("POINTER_URL") ?: "https://gist.githubusercontent.com/songsnim/f1d24fd04191a56b8b1119c0ccf2aee2/raw/backend_url.txt"}\"")
     }
 
     signingConfigs {

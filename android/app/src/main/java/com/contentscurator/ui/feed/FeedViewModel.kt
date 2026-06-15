@@ -3,6 +3,7 @@ package com.contentscurator.ui.feed
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.contentscurator.data.ServerResolver
 import com.contentscurator.data.api.FeedItem
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
@@ -28,6 +29,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun load() {
         viewModelScope.launch {
             _uiState.value = FeedUiState.Loading
+            ServerResolver.ensure(getApplication())
             runCatching {
                 val items = repo.getAllItems()
                 val readSlugs = repo.getAllReadSlugs()

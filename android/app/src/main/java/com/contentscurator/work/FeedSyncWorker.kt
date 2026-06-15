@@ -12,6 +12,7 @@ class FeedSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         return runCatching {
+            com.contentscurator.data.ServerResolver.ensure(applicationContext)
             val items = RetrofitClient.api.getTodayFeed()
             val readSlugs = AppDatabase.getInstance(applicationContext).readStatusDao().getAllReadSlugs().toSet()
             val widgetItems = items.map { WidgetItem(it.slug, it.title, it.platform, it.slug in readSlugs) }
