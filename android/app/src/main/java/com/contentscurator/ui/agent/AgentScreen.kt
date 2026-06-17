@@ -52,7 +52,8 @@ class AgentViewModel(app: Application) : AndroidViewModel(app) {
         _status.value = null
         runCatching {
             val result = repo.triggerCollect()
-            _status.value = "수집 완료: ${result["saved"]}개 저장됨"
+            val collected = (result["collected"] as? Number)?.toInt() ?: 0
+            _status.value = "수집 완료: ${collected}개 저장됨"
             // 수집 후 위젯 자동 갱신
             val items = repo.getTodayFeed()
             val readSlugs = repo.getAllReadSlugs()
