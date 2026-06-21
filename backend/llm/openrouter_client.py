@@ -1,8 +1,12 @@
 import json
+import re
 import httpx
 from config import settings
 
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# 한국어/영어 외 문자(CJK 한자, 일본어 가나 등). 요약에 섞이면 안 됨.
+_FORBIDDEN_CHARS = re.compile(r"[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]")
 
 _ARTICLE_PROMPT = {
     "ko": (
@@ -24,6 +28,42 @@ _ARTICLE_PROMPT = {
         "- Remove only greetings, ads, and like/subscribe requests.\n"
         "- Write in English markdown.\n\n"
         "Transcript:\n"
+    ),
+}
+
+_SUMMARY_PROMPT = {
+    "ko": (
+        "다음은 웹 아티클의 본문이다(메뉴·광고 등 잡텍스트가 섞여 있을 수 있다). "
+        "핵심 내용만 골라 읽기 좋은 마크다운으로 구조화해 요약하라.\n\n"
+        "규칙:\n"
+        "- 본문과 무관한 메뉴·네비게이션·광고·저작권 문구는 무시하라.\n"
+        "- 아래 형식을 그대로 따르라:\n"
+        "  ## 한 줄 요약\n"
+        "  (핵심을 한 문장으로)\n\n"
+        "  ## 핵심 포인트\n"
+        "  - (불릿 3~6개)\n\n"
+        "  ## 상세\n"
+        "  (소제목 ###과 단락으로 정리, 중요한 수치·예시·논점 포함)\n"
+        "- 원문에 없는 내용을 지어내지 마라.\n"
+        "- 한국어 마크다운으로 작성하라. 전문 용어나 고유명사는 영어 원어 그대로 두어도 된다.\n"
+        "- 단, 한국어와 영어 외의 문자(한자·일본어 가나 등 다른 언어 문자)는 절대 사용하지 마라.\n\n"
+        "본문:\n"
+    ),
+    "en": (
+        "The following is the body of a web article (it may contain menu/ad noise). "
+        "Extract the essential content and summarize it as well-structured markdown.\n\n"
+        "Rules:\n"
+        "- Ignore navigation, menus, ads, and copyright boilerplate.\n"
+        "- Follow this exact format:\n"
+        "  ## TL;DR\n"
+        "  (one sentence)\n\n"
+        "  ## Key Points\n"
+        "  - (3-6 bullets)\n\n"
+        "  ## Details\n"
+        "  (### subheadings and paragraphs; keep important figures, examples, arguments)\n"
+        "- Do NOT fabricate anything not in the source.\n"
+        "- Write in English markdown only.\n\n"
+        "Article:\n"
     ),
 }
 
@@ -58,6 +98,21 @@ def transcribe_to_article(transcript: str) -> str:
     """영상 자막을 내용 손실 없이 구조화된 글로 재구성."""
     prompt = _ARTICLE_PROMPT[settings.summary_language] + transcript[:60000]
     return _chat(prompt, settings.openrouter_summary_model)
+
+
+def summarize_article(body: str) -> str:
+    """웹 아티클 본문을 구조화된 마크다운으로 요약.
+
+    모델이 가끔 한자·가나를 섞으므로, 검출되면 재생성(최대 2회)하고
+    그래도 남으면 해당 문자를 제거해 한국어/영어만 남긴다.
+    """
+    prompt = _SUMMARY_PROMPT[settings.summary_language] + body[:60000]
+    md = _chat(prompt, settings.openrouter_summary_model)
+    for _ in range(2):
+        if not _FORBIDDEN_CHARS.search(md):
+            return md
+        md = _chat(prompt, settings.openrouter_summary_model)
+    return _FORBIDDEN_CHARS.sub("", md)
 
 
 def generate_title(content: str) -> str:
