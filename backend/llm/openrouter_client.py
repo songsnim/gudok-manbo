@@ -16,7 +16,12 @@ _ARTICLE_PROMPT = {
         "- 자막을 그대로 받아쓰지 마라. 구어체·말더듬·반복은 다듬되 의미는 그대로 유지하라.\n"
         "- 제목(##)과 소제목, 단락, 필요한 경우 리스트로 내용을 구조화하라.\n"
         "- 인사말, 광고, 구독·좋아요 요청 등 본문과 무관한 부분만 제거하라.\n"
-        "- 한국어 마크다운으로 작성하라.\n\n"
+        "- 한국어 마크다운으로 작성하라.\n"
+        "- 마지막에 '## 핵심 인사이트' 섹션을 덧붙여라. 이 섹션에서는:\n"
+        "  · 작성자가 이 영상을 만든 이유와 의도가 무엇인지 짚어라.\n"
+        "  · 이 글이 어떤 인사이트를 제공하는지 밝혀라.\n"
+        "  · 독자가 자신의 삶에 적용해 도움받을 수 있는 핵심 정수(가장 본질적인 인사이트)를 골라, "
+        "독자 입장에서 바로 쓸 수 있도록 refine해서 제시하라.\n\n"
         "자막:\n"
     ),
     "en": (
@@ -26,7 +31,12 @@ _ARTICLE_PROMPT = {
         "- Do NOT copy the transcript verbatim. Clean up filler, stutters, and repetition while keeping the meaning.\n"
         "- Structure with a title (##), subheadings, paragraphs, and lists where appropriate.\n"
         "- Remove only greetings, ads, and like/subscribe requests.\n"
-        "- Write in English markdown.\n\n"
+        "- Write in English markdown.\n"
+        "- End with a '## Key Insight' section. In this section:\n"
+        "  · State why the author made this video and what their intent is.\n"
+        "  · Spell out what insight this piece offers.\n"
+        "  · Pick the essential core insight the reader can apply to their own life, "
+        "refined and framed so the reader can act on it directly.\n\n"
         "Transcript:\n"
     ),
 }
