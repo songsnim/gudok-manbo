@@ -112,7 +112,7 @@ class AddItemIn(BaseModel):
 
 @app.post("/feed/add")
 def add_feed_item(body: AddItemIn):
-    """미리보기 아이템을 피드로 옮김 (영상=요약, 글=원본)"""
+    """미리보기 아이템을 피드로 옮김 (영상=재구성, 글=요약)"""
     from scrapers.preview import add_item
     return add_item(body.model_dump())
 

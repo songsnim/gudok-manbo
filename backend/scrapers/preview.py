@@ -114,7 +114,7 @@ def preview_source(sub: dict, limit: int = 10) -> list[dict]:
 
 
 def add_item(item: dict) -> dict:
-    """미리보기 아이템을 피드(Vault)로 옮김. 영상은 요약, 글은 원본."""
+    """미리보기 아이템을 피드(Vault)로 옮김. 영상은 재구성, 글은 요약, LinkedIn은 원문."""
     platform = item.get("platform", "")
     url = item.get("source_url", "")
     author = item.get("author", "")
@@ -147,7 +147,7 @@ def add_item(item: dict) -> dict:
         return {"status": "added", "slug": slug}
 
     from scrapers.rss import _make_slug, _fetch_article_body
-    from llm.openrouter_client import generate_title
+    from llm.openrouter_client import generate_title, summarize_article
     slug = _make_slug(url, platform)
     if get_item(slug):
         return {"status": "exists", "slug": slug}
@@ -155,5 +155,5 @@ def add_item(item: dict) -> dict:
     if not body:
         return {"status": "error", "reason": "본문 수집 실패"}
     title = item.get("title") or generate_title(body)
-    write_item(slug, title, platform, url, author, body, subscription=True)
+    write_item(slug, title, platform, url, author, summarize_article(body), subscription=True)
     return {"status": "added", "slug": slug}
