@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -165,6 +166,7 @@ private fun platformColor(platform: String): androidx.compose.ui.graphics.Color 
 @Composable
 fun ItemDetailScreen(item: FeedItem, onBack: () -> Unit, onDelete: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
+    BackHandler(onBack = onBack)
     Scaffold(
         topBar = {
             TopAppBar(
