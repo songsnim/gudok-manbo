@@ -3,6 +3,7 @@ from pathlib import Path
 import frontmatter
 
 from config import settings
+from vault.reader import item_path
 
 
 def write_item(
@@ -15,10 +16,11 @@ def write_item(
     subscription: bool,
 ) -> Path:
     settings.articles_path.mkdir(parents=True, exist_ok=True)
-    path = settings.articles_path / f"{slug}.md"
+    path = item_path(slug, title)
 
     post = frontmatter.Post(
         body,
+        slug=slug,
         title=title,
         platform=platform,
         source_url=source_url,
@@ -32,7 +34,7 @@ def write_item(
 
 def delete_item(slug: str) -> bool:
     """Vault에서 아이템(.md) 삭제. 성공 시 True."""
-    path = settings.articles_path / f"{slug}.md"
+    path = item_path(slug)
     if path.exists():
         path.unlink()
         return True
