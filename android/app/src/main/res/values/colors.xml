@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">구독만보</string>
+    <color name="ic_launcher_background">#E1C38D</color>
 </resources>
