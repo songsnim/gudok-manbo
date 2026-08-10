@@ -102,7 +102,10 @@ interface ApiService {
     suspend fun search(@Query("q") q: String, @Query("platform") platform: String): SearchResponse
 
     @GET("subscriptions/{id}/preview")
-    suspend fun preview(@Path("id") id: String): PreviewResponse
+    suspend fun preview(
+        @Path("id") id: String,
+        @Query("cursor") cursor: String? = null,
+    ): PreviewResponse
 
     @POST("feed/add")
     suspend fun addToFeed(@Body body: AddItemRequest): AddItemResult
@@ -137,7 +140,7 @@ data class PreviewItem(
 )
 
 @JsonClass(generateAdapter = true)
-data class PreviewResponse(val items: List<PreviewItem>)
+data class PreviewResponse(val items: List<PreviewItem>, val next_cursor: String? = null)
 
 @JsonClass(generateAdapter = true)
 data class AddItemRequest(

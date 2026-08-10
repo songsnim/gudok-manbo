@@ -36,36 +36,36 @@ def _feed_url_for(sub: dict) -> str | None:
     return None
 
 
-def preview_source(sub: dict, limit: int = 10) -> list[dict]:
-    """구독 소스의 최신 글/영상 목록을 반환 (저장·요약 없음)."""
+def preview_source(sub: dict, limit: int = 10, cursor: str | None = None) -> dict:
+    """구독 소스의 글/영상 목록 + 다음 커서 (저장·요약 없음).
+
+    YouTube만 무한 스크롤(커서) 지원. 나머지는 RSS라 다음 페이지가 없음.
+    """
     platform = sub.get("platform", "")
     author = sub.get("author", "")
 
     if platform == "youtube":
-        from scrapers.youtube import _fetch_feed, _make_slug
+        from scrapers.youtube import fetch_videos, _make_slug
         try:
-            feed = _fetch_feed(sub["channel_id"])
+            videos, next_cursor = fetch_videos(sub["channel_id"], cursor)
         except Exception as e:
             logger.warning(f"YouTube 미리보기 실패: {e}")
-            return []
-        items = []
-        for entry in feed.entries[:limit]:
-            video_id = entry.get("yt_videoid", "")
-            if not video_id:
-                continue
-            slug = _make_slug(video_id)
-            items.append({
-                "title": entry.get("title", ""),
-                "source_url": entry.get("link", ""),
-                "date": _entry_date(entry),
-                "platform": "youtube",
-                "author": author,
-                "type": "video",
-                "video_id": video_id,
-                "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-                "in_feed": get_item(slug) is not None,
-            })
-        return items
+            return {"items": [], "next_cursor": None}
+        items = [{
+            "title": v["title"],
+            "source_url": f"https://www.youtube.com/watch?v={v['video_id']}",
+            "date": v["date"],
+            "platform": "youtube",
+            "author": author,
+            "type": "video",
+            "video_id": v["video_id"],
+            "thumbnail": f"https://i.ytimg.com/vi/{v['video_id']}/hqdefault.jpg",
+            "in_feed": get_item(_make_slug(v["video_id"])) is not None,
+        } for v in videos]
+        return {"items": items, "next_cursor": next_cursor}
+
+    if cursor:
+        return {"items": [], "next_cursor": None}  # 피드 기반은 페이지네이션 없음
 
     if platform == "linkedin":
         from scrapers.linkedin import fetch_posts, _slug
@@ -73,8 +73,8 @@ def preview_source(sub: dict, limit: int = 10) -> list[dict]:
             posts = fetch_posts(sub.get("feed_url", ""), limit)
         except Exception as e:
             logger.warning(f"LinkedIn 미리보기 실패: {e}")
-            return []
-        return [{
+            return {"items": [], "next_cursor": None}
+        return {"items": [{
             "title": post["title"],
             "source_url": post["source_url"],
             "date": post.get("date", ""),
@@ -85,11 +85,11 @@ def preview_source(sub: dict, limit: int = 10) -> list[dict]:
             "thumbnail": None,
             "body": post["body"],
             "in_feed": get_item(_slug(post["source_url"])) is not None,
-        } for post in posts]
+        } for post in posts], "next_cursor": None}
 
     feed_url = _feed_url_for(sub)
     if not feed_url:
-        return []  # threads/twitter: 미리보기 미지원
+        return {"items": [], "next_cursor": None}  # threads/twitter: 미리보기 미지원
 
     from scrapers.rss import _make_slug
     feed = feedparser.parse(feed_url)
@@ -110,7 +110,7 @@ def preview_source(sub: dict, limit: int = 10) -> list[dict]:
             "thumbnail": None,
             "in_feed": get_item(slug) is not None,
         })
-    return items
+    return {"items": items, "next_cursor": None}
 
 
 def add_item(item: dict) -> dict:

@@ -8,6 +8,7 @@ import com.contentscurator.data.api.SubscriptionPatch
 import com.contentscurator.data.api.DiscoverResult
 import com.contentscurator.data.api.FeedItem
 import com.contentscurator.data.api.PreviewItem
+import com.contentscurator.data.api.PreviewResponse
 import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.api.SearchResult
 import com.contentscurator.data.api.Subscription
@@ -58,8 +59,8 @@ class FeedRepository(private val db: AppDatabase) {
     suspend fun search(q: String, platform: String): List<SearchResult> =
         RetrofitClient.api.search(q, platform).results
 
-    suspend fun preview(subId: String): List<PreviewItem> =
-        RetrofitClient.api.preview(subId).items
+    suspend fun preview(subId: String, cursor: String? = null): PreviewResponse =
+        RetrofitClient.api.preview(subId, cursor)
 
     suspend fun addToFeed(item: PreviewItem): AddItemResult =
         RetrofitClient.api.addToFeed(AddItemRequest(

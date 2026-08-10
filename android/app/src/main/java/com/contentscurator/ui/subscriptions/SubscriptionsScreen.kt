@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -161,6 +162,11 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
     private val _previewLoading = MutableStateFlow(false)
     val previewLoading: StateFlow<Boolean> = _previewLoading
 
+    private val _previewLoadingMore = MutableStateFlow(false)
+    val previewLoadingMore: StateFlow<Boolean> = _previewLoadingMore
+
+    private var previewCursor: String? = null
+
     private val _addingUrls = MutableStateFlow<Set<String>>(emptySet())
     val addingUrls: StateFlow<Set<String>> = _addingUrls
 
@@ -241,15 +247,36 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
         _previewSub.value = sub
         _previewItems.value = emptyList()
         _addedUrls.value = emptySet()
+        previewCursor = null
         _previewLoading.value = true
-        runCatching { _previewItems.value = repo.preview(sub.id) }
+        runCatching { repo.preview(sub.id) }
+            .onSuccess { _previewItems.value = it.items; previewCursor = it.next_cursor }
             .onFailure { _toast.value = "미리보기 실패: ${it.message}" }
         _previewLoading.value = false
+    }
+
+    /** 스크롤 끝 도달 시 이전 영상 이어서 로드. 커서 없으면 무시. */
+    fun loadMorePreview() {
+        val sub = _previewSub.value ?: return
+        val cursor = previewCursor ?: return
+        if (_previewLoadingMore.value || _previewLoading.value) return
+        _previewLoadingMore.value = true
+        viewModelScope.launch {
+            runCatching { repo.preview(sub.id, cursor) }
+                .onSuccess {
+                    val seen = _previewItems.value.mapTo(mutableSetOf()) { i -> i.source_url }
+                    _previewItems.value += it.items.filter { i -> i.source_url !in seen }
+                    previewCursor = it.next_cursor
+                }
+                .onFailure { _toast.value = "추가 로드 실패: ${it.message}" }
+            _previewLoadingMore.value = false
+        }
     }
 
     fun closePreview() {
         _previewSub.value = null
         _previewItems.value = emptyList()
+        previewCursor = null
     }
 
     fun addToFeed(item: PreviewItem) = viewModelScope.launch {
@@ -472,8 +499,16 @@ private fun PreviewBottomSheet(
 ) {
     val items by vm.previewItems.collectAsStateWithLifecycle()
     val loading by vm.previewLoading.collectAsStateWithLifecycle()
+    val loadingMore by vm.previewLoadingMore.collectAsStateWithLifecycle()
     val addingUrls by vm.addingUrls.collectAsStateWithLifecycle()
     val addedUrls by vm.addedUrls.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+
+    // 끝에서 5개 남으면 다음 페이지 요청
+    LaunchedEffect(listState, items.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .collect { last -> if (items.isNotEmpty() && last >= items.size - 5) vm.loadMorePreview() }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -500,7 +535,10 @@ private fun PreviewBottomSheet(
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                else -> LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     items(items, key = { it.source_url }) { item ->
                         val added = item.in_feed || item.source_url in addedUrls
                         PreviewRow(
@@ -510,6 +548,11 @@ private fun PreviewBottomSheet(
                             onAdd = { vm.addToFeed(item) },
                         )
                         HorizontalDivider()
+                    }
+                    if (loadingMore) item {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
                     }
                 }
             }
