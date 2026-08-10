@@ -39,6 +39,7 @@ import com.contentscurator.data.api.SearchResult
 import com.contentscurator.data.api.Subscription
 import com.contentscurator.data.api.SubscriptionRequest
 import com.contentscurator.data.ServerPrefs
+import com.contentscurator.data.ServerResolver
 import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
@@ -206,6 +207,7 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun load() = viewModelScope.launch {
+        ServerResolver.ensure(getApplication())
         runCatching {
             val subs = repo.getSubscriptions()
             _items.value = subs
