@@ -34,8 +34,7 @@ android/captures/
 .idea/
 
 # ── 에이전트 툴링 (공개 앱 레포와 무관한 노이즈) ──────────────────────────
-.claude/*
-!.claude/skills/
+.claude/
 .agents/
 .codegraph/
 skills-lock.json
