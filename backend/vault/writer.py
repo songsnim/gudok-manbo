@@ -14,6 +14,7 @@ def write_item(
     author: str,
     body: str,
     subscription: bool,
+    published: str = "",
 ) -> Path:
     settings.articles_path.mkdir(parents=True, exist_ok=True)
     path = item_path(slug, title)
@@ -26,6 +27,7 @@ def write_item(
         source_url=source_url,
         author=author,
         date=date.today(),
+        published=published,  # 매체에 실제 게시된 날짜 (date는 수집일)
         subscription=subscription,
     )
     path.write_text(frontmatter.dumps(post), encoding="utf-8")
