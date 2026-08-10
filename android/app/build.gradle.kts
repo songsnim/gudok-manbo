@@ -44,6 +44,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 릴리스 앱(Obtainium 설치본)과 서명이 달라 덮어쓰기가 막힌다. 별개 앱으로 분리해 공존시킴.
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
