@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ContentsCurator" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.ContentsCurator" parent="android:Theme.Material.NoActionBar">
+        <!-- Compose 로드 전 첫 프레임이 흰색으로 번쩍이지 않게 -->
+        <item name="android:windowBackground">#121316</item>
+    </style>
 </resources>

@@ -5,6 +5,7 @@ import httpx
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 
 from llm.openrouter_client import transcribe_to_article, generate_title
+from scrapers.rss import entry_date
 from vault.writer import write_item
 
 
@@ -86,6 +87,23 @@ def fetch_videos(channel_id: str, cursor: str | None = None) -> tuple[list[dict]
     return videos, next_cursor
 
 
+_PUBLISHED_RE = re.compile(r'itemprop="datePublished" content="([^"]+)"|"publishDate":"([^"]+)"')
+
+
+def video_published(video_id: str) -> str:
+    """영상 게시일(YYYY-MM-DD). 실패 시 빈 문자열.
+
+    채널 RSS는 최신 15개만 담으므로, 오래된 영상은 watch 페이지에서 직접 읽는다.
+    """
+    try:
+        r = httpx.get(f"https://www.youtube.com/watch?v={video_id}",
+                      headers=_HEADERS, timeout=10, follow_redirects=True)
+        m = _PUBLISHED_RE.search(r.text)
+        return (m.group(1) or m.group(2))[:10] if m else ""
+    except Exception:
+        return ""
+
+
 _yt_api = YouTubeTranscriptApi()
 
 def _get_transcript(video_id: str) -> str | None:
@@ -135,6 +153,7 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
             author=author,
             body=body,
             subscription=subscription,
+            published=entry_date(entry),
         )
         saved.append(slug)
 

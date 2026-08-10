@@ -13,7 +13,11 @@ import kotlinx.coroutines.launch
 
 sealed interface FeedUiState {
     data object Loading : FeedUiState
-    data class Success(val items: List<FeedItem>, val readSlugs: Set<String>) : FeedUiState
+    data class Success(
+        val items: List<FeedItem>,
+        val readSlugs: Set<String>,
+        val avatars: Map<String, String> = emptyMap(),  // author -> avatar_url
+    ) : FeedUiState
     data class Error(val message: String) : FeedUiState
 }
 
@@ -33,7 +37,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 val items = repo.getAllItems()
                 val readSlugs = repo.getAllReadSlugs()
-                _uiState.value = FeedUiState.Success(items, readSlugs)
+                // 아바타는 목록 표시용 부가 정보 — 실패해도 피드는 보여준다
+                val avatars = runCatching {
+                    repo.getSubscriptions()
+                        .mapNotNull { s -> s.avatar_url?.takeIf { it.isNotBlank() }?.let { s.author to it } }
+                        .toMap()
+                }.getOrDefault(emptyMap())
+                _uiState.value = FeedUiState.Success(items, readSlugs, avatars)
             }.onFailure {
                 _uiState.value = FeedUiState.Error(it.message ?: "알 수 없는 오류")
             }

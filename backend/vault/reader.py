@@ -39,6 +39,7 @@ def _parse_file(path: Path) -> Optional[dict]:
             "source_url": meta.get("source_url", ""),
             "author": meta.get("author", ""),
             "date": str(meta.get("date", "")),
+            "published": str(meta.get("published", "")),
             "subscription": meta.get("subscription", False),
             "body": post.content,
         }
