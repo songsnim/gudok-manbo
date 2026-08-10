@@ -49,6 +49,9 @@ import kotlinx.coroutines.launch
 
 // ── URL 자동 파싱 ──────────────────────────────────────────────────────────────
 
+/** 파싱은 됐지만 구독은 못 하는 URL (Threads/X/Dev.to). */
+const val UNSUPPORTED = "unsupported"
+
 data class ParsedSub(
     val platform: String,
     val author: String,
@@ -84,21 +87,11 @@ fun parseUrl(raw: String): ParsedSub? {
                 ?: Regex("medium\\.com/([^/@?][^/?]*)").find(url)?.groupValues?.get(1) ?: ""
             ParsedSub("medium", username, null, null, username)
         }
-        "threads.net" in url -> {
-            val username = Regex("threads\\.net/@([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("threads", "@$username", null, null, username)
-        }
-        "twitter.com" in url || "x.com" in url -> {
-            val username = Regex("(?:twitter|x)\\.com/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("twitter", "@$username", null, null, username)
-        }
+        "threads.net" in url || "twitter.com" in url || "x.com" in url || "dev.to" in url ->
+            ParsedSub(UNSUPPORTED, "", null, null, null, hint = "지원하지 않는 플랫폼입니다.")
         "linkedin.com" in url -> {
             val name = Regex("linkedin\\.com/(?:company|in)/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
             ParsedSub("linkedin", name, null, url, null)
-        }
-        "dev.to" in url -> {
-            val username = Regex("dev\\.to/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("devto", username, null, null, username)
         }
         "hashnode" in url -> {
             val username = Regex("([^.]+)\\.hashnode\\.dev").find(url)?.groupValues?.get(1) ?: ""
@@ -113,12 +106,10 @@ fun parseUrl(raw: String): ParsedSub? {
 
 fun platformColor(platform: String): Color = when (platform.lowercase()) {
     "youtube" -> Color(0xFFFF0000)
-    "medium" -> Color(0xFF000000)
+    // 원래 브랜드색이 검정인 플랫폼은 다크 배경에서 안 보이므로 밝은 회색으로
+    "medium" -> Color(0xFF3C4043)
     "linkedin" -> Color(0xFF0A66C2)
-    "x", "twitter" -> Color(0xFF000000)
-    "threads" -> Color(0xFF000000)
     "substack" -> Color(0xFFFF6719)
-    "devto" -> Color(0xFF0A0A0A)
     "hackernews" -> Color(0xFFFF6600)
     else -> Color(0xFF888888)
 }
@@ -127,12 +118,10 @@ fun platformLabel(platform: String): String = when (platform.lowercase()) {
     "youtube" -> "YouTube"
     "medium" -> "Medium"
     "linkedin" -> "LinkedIn"
-    "x", "twitter" -> "X / Twitter"
-    "threads" -> "Threads"
     "substack" -> "Substack"
-    "devto" -> "Dev.to"
     "hackernews" -> "HackerNews"
     "rss" -> "RSS"
+    UNSUPPORTED -> "미지원"
     else -> platform
 }
 
@@ -533,7 +522,7 @@ private fun PreviewBottomSheet(
                     CircularProgressIndicator()
                 }
                 items.isEmpty() -> Text(
-                    "미리보기를 가져올 수 없습니다.\n(LinkedIn/X/Threads는 미지원)",
+                    "미리보기를 가져올 수 없습니다.\n(LinkedIn은 쿠키 설정 필요)",
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
@@ -611,8 +600,7 @@ private fun PreviewRow(
 fun PlatformBadge(platform: String, size: Int = 36) {
     val emoji = when (platform.lowercase()) {
         "youtube" -> "▶"; "medium" -> "M"; "linkedin" -> "in"
-        "x", "twitter" -> "X"; "threads" -> "@"; "substack" -> "S"
-        "devto" -> "D"; "hackernews" -> "Y"; else -> "·"
+        "substack" -> "S"; "hackernews" -> "Y"; else -> "·"
     }
     Box(
         modifier = Modifier
@@ -637,9 +625,7 @@ private fun SearchBottomSheet(vm: SubscriptionsViewModel, onDismiss: () -> Unit)
     var platform by remember { mutableStateOf("youtube") }
     val platforms = listOf(
         "youtube" to "YouTube",
-        "devto" to "Dev.to",
-        "linkedin" to "LinkedIn",
-        "twitter" to "X (Twitter)",
+        "medium" to "Medium",
     )
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -771,8 +757,8 @@ private fun AddByUrlDialog(
     }
 
     val isYoutube = parsed?.platform == "youtube"
-    val canConfirm = parsed != null && authorInput.isNotBlank() &&
-        (!isYoutube || channelIdInput.isNotBlank())
+    val canConfirm = parsed != null && parsed.platform != UNSUPPORTED &&
+        authorInput.isNotBlank() && (!isYoutube || channelIdInput.isNotBlank())
 
     AlertDialog(
         onDismissRequest = onDismiss,

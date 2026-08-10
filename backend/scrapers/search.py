@@ -1,9 +1,9 @@
-import asyncio
 import json
 import logging
 import re
 from pathlib import Path
 
+import feedparser
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,6 @@ _YT_HEADERS = {
 }
 
 _COOKIES_FILE = Path(__file__).parent.parent / "data" / "linkedin_cookies.json"
-_TWITTER_DB = Path(__file__).parent.parent / "data" / "twitter_accounts.db"
 
 
 def _yt_initial_data(html: str) -> dict:
@@ -96,38 +95,76 @@ def search_youtube(query: str, limit: int = 8) -> list[dict]:
     return channels
 
 
-def search_devto(query: str, limit: int = 8) -> list[dict]:
-    """Dev.to 아티클 검색 → 작성자 목록 반환"""
-    try:
-        r = httpx.get(
-            "https://dev.to/api/articles",
-            params={"q": query, "per_page": limit * 2},
-            headers={"Accept": "application/json"},
-            timeout=10,
-        )
-        r.raise_for_status()
-        articles = r.json()
-    except Exception as e:
-        logger.warning(f"Dev.to 검색 실패: {e}")
-        return []
+_MEDIUM_LINK = re.compile(r"https?://(?:([^./]+)\.medium\.com|medium\.com/(@?[^/?]+))/")
 
-    seen = set()
-    results = []
-    for article in articles:
-        user = article.get("user", {})
-        username = user.get("username", "")
-        if not username or username in seen:
+
+def medium_handle(link: str) -> str | None:
+    """Medium 글 URL에서 구독용 handle(@사용자 또는 퍼블리케이션명) 추출.
+
+    커스텀 도메인(towardsdatascience.com 등)은 medium.com/feed/로 못 받으므로 None.
+    """
+    m = _MEDIUM_LINK.match(link)
+    if not m:
+        return None
+    return m.group(1) or m.group(2)
+
+
+def _medium_row(handle: str, name: str, description: str) -> dict:
+    return {
+        "platform": "medium",
+        "name": name or handle,
+        "channel_id": None,
+        "handle": handle,
+        "description": description[:150],
+        "subscriber_count": "",
+        "avatar_url": None,  # 아바타는 구독 추가 시 fetch_avatar가 채운다
+    }
+
+
+def _feed_title(feed) -> str:
+    """'Stories by X on Medium' / 'X - Medium' 형태의 피드 제목을 이름만 남김."""
+    title = feed.get("title", "")
+    title = re.sub(r"^Stories by ", "", title)
+    return re.sub(r"\s*(on Medium| - Medium)$", "", title).strip()
+
+
+def search_medium(query: str, limit: int = 8) -> list[dict]:
+    """Medium 검색 — 쿼리를 핸들(@저자/퍼블리케이션)로 먼저 시도, 그다음 태그 피드로 저자 발굴."""
+    q = query.strip()
+    is_handle = q.startswith("@")
+    # 태그·퍼블리케이션 URL은 소문자 하이픈 슬러그만 받는다
+    direct = q if is_handle else re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")
+
+    results: list[dict] = []
+    seen: set[str] = set()
+
+    # 1) 쿼리 자체가 유효한 핸들이면 최상단에. 피드 링크는 커스텀 도메인일 수 있어 파싱하지 않는다
+    try:
+        parsed = feedparser.parse(f"https://medium.com/feed/{direct}")
+        if parsed.entries:
+            seen.add(direct.lower())
+            results.append(_medium_row(
+                direct, _feed_title(parsed.feed), parsed.entries[0].get("title", "")
+            ))
+    except Exception as e:
+        logger.warning(f"Medium 핸들 조회 실패 ({direct}): {e}")
+
+    if is_handle:
+        return results
+
+    # 2) 태그 피드의 글쓴이들 — 태그 피드는 medium.com/@user 형태로 링크된다
+    try:
+        entries = feedparser.parse(f"https://medium.com/feed/tag/{direct}").entries
+    except Exception as e:
+        logger.warning(f"Medium 태그 검색 실패 ({direct}): {e}")
+        entries = []
+
+    for entry in entries:
+        handle = medium_handle(entry.get("link", ""))
+        if not handle or handle.lower() in seen:
             continue
-        seen.add(username)
-        results.append({
-            "platform": "devto",
-            "name": user.get("name", username),
-            "channel_id": None,
-            "handle": username,
-            "description": article.get("description", "")[:150],
-            "subscriber_count": "",
-            "avatar_url": user.get("profile_image_90") or user.get("profile_image"),
-        })
+        seen.add(handle.lower())
+        results.append(_medium_row(handle, entry.get("author", ""), entry.get("title", "")))
         if len(results) >= limit:
             break
     return results
@@ -159,66 +196,11 @@ def search_linkedin(query: str, limit: int = 8) -> list[dict]:
         return []
 
 
-def _user_dict(user) -> dict:
-    return {
-        "platform": "twitter",
-        "name": user.displayname,
-        "channel_id": None,
-        "handle": user.username,
-        "description": (user.rawDescription or "")[:150],
-        "subscriber_count": f"{user.followersCount:,}명",
-        "avatar_url": user.profileImageUrl,
-    }
-
-
-async def _twitter_search_async(query: str, limit: int) -> list[dict]:
-    import twscrape
-    api = twscrape.API(str(_TWITTER_DB))
-
-    handle = query.lstrip("@")
-    results: list[dict] = []
-    seen: set[str] = set()
-
-    # 1) 정확한 핸들이면 그 계정을 맨 위에
-    try:
-        exact = await api.user_by_login(handle)
-        if exact:
-            seen.add(exact.username.lower())
-            results.append(_user_dict(exact))
-    except Exception:
-        pass
-
-    # 2) 키워드로 최근 트윗 검색 → 작성자 추출 (비슷한 계정)
-    try:
-        async for tweet in api.search(query, limit=limit * 5):
-            uname = tweet.user.username.lower()
-            if uname in seen:
-                continue
-            seen.add(uname)
-            results.append(_user_dict(tweet.user))
-            if len(results) >= limit:
-                break
-    except Exception as e:
-        logger.warning(f"Twitter 검색 실패: {e}")
-
-    return results[:limit]
-
-
-def search_twitter(query: str, limit: int = 8) -> list[dict]:
-    """X/Twitter 계정 검색 — 정확한 핸들 + 키워드 관련 작성자."""
-    if not _TWITTER_DB.exists():
-        logger.warning("Twitter 계정 DB 없음 — twscrape 계정 설정 필요")
-        return []
-    return asyncio.run(_twitter_search_async(query, limit))
-
-
 def search_platform(query: str, platform: str, limit: int = 8) -> list[dict]:
     if platform == "youtube":
         return search_youtube(query, limit)
-    if platform == "devto":
-        return search_devto(query, limit)
+    if platform == "medium":
+        return search_medium(query, limit)
     if platform == "linkedin":
         return search_linkedin(query, limit)
-    if platform in ("twitter", "x"):
-        return search_twitter(query, limit)
     return []
