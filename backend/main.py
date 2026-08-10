@@ -91,13 +91,13 @@ def delete_subscription(sub_id: str):
 
 
 @app.get("/subscriptions/{sub_id}/preview")
-def preview_subscription(sub_id: str):
-    """구독 소스의 최신 글/영상 목록 (저장 없음)"""
+def preview_subscription(sub_id: str, cursor: Optional[str] = None):
+    """구독 소스의 글/영상 목록 (저장 없음). cursor로 이전 영상 이어 로드."""
     sub = next((s for s in load_subscriptions() if s.get("id") == sub_id), None)
     if not sub:
         raise HTTPException(status_code=404, detail="구독을 찾을 수 없음")
     from scrapers.preview import preview_source
-    return {"items": preview_source(sub)}
+    return preview_source(sub, cursor=cursor)
 
 
 class AddItemIn(BaseModel):
