@@ -38,11 +38,6 @@ def _validate(source: dict) -> bool:
             feed = feedparser.parse(f"https://{pub}/feed")
             return len(feed.entries) > 0
 
-        if platform == "devto":
-            username = source.get("username", "").lstrip("@")
-            feed = feedparser.parse(f"https://dev.to/feed/{username}")
-            return len(feed.entries) > 0
-
         if platform == "hackernews":
             return True  # hnrss.org는 항상 유효
 
@@ -53,7 +48,7 @@ def _validate(source: dict) -> bool:
             feed = feedparser.parse(feed_url)
             return len(feed.entries) > 0
 
-        # threads, twitter, linkedin: 검증 생략 (브라우저 필요)
+        # linkedin: 검증 생략 (브라우저 필요)
         return True
 
     except Exception as e:

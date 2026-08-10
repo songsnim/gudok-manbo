@@ -115,10 +115,7 @@ private fun platformEmoji(platform: String) = when (platform.lowercase()) {
     "youtube" -> "▶"
     "medium" -> "M"
     "linkedin" -> "in"
-    "x", "twitter" -> "X"
-    "threads" -> "@"
     "substack" -> "S"
-    "devto" -> "D"
     "hackernews" -> "Y"
     else -> "·"
 }
@@ -127,10 +124,7 @@ private fun platformColor(platform: String) = when (platform.lowercase()) {
     "youtube" -> Color(0xFFFF0000)
     "medium" -> Color(0xFF000000)
     "linkedin" -> Color(0xFF0A66C2)
-    "x", "twitter" -> Color(0xFF000000)
-    "threads" -> Color(0xFF000000)
     "substack" -> Color(0xFFFF6719)
-    "devto" -> Color(0xFF0A0A0A)
     "hackernews" -> Color(0xFFFF6600)
     else -> Color(0xFF888888)
 }
