@@ -34,9 +34,14 @@ android/captures/
 .idea/
 
 # ── 에이전트 툴링 (공개 앱 레포와 무관한 노이즈) ──────────────────────────
-.claude/
+.claude/*
+!.claude/skills/
 .agents/
+.codegraph/
 skills-lock.json
+
+# ── 로컬 생성 문서 (tailnet http.server로 보는 용도, 레포에 안 남긴다) ──────
+docs/code-explainer.html
 
 # ── 기타 ─────────────────────────────────────────────────────────────────
 .DS_Store
