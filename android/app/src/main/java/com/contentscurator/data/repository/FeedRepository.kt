@@ -69,7 +69,9 @@ class FeedRepository(private val db: AppDatabase) {
             author = item.author,
             title = item.title,
             type = item.type,
+            date = item.date,
             video_id = item.video_id,
             body = item.body ?: "",
+            feed_url = item.feed_url,
         ))
 }
