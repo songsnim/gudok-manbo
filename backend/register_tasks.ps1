@@ -1,4 +1,4 @@
-# Contents Curator — 수집 작업을 Windows 작업 스케줄러에 등록한다.
+﻿# Contents Curator — 수집 작업을 Windows 작업 스케줄러에 등록한다.
 #
 # 슬립 중인 PC를 정해진 시각에 RTC wake timer로 깨워 collect.py 를 1회 실행한다.
 # (모니터는 켜지지 않는다 — 백그라운드 wake.)
