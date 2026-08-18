@@ -59,6 +59,9 @@ class FeedRepository(private val db: AppDatabase) {
     suspend fun search(q: String, platform: String): List<SearchResult> =
         RetrofitClient.api.search(q, platform).results
 
+    suspend fun searchVideos(q: String): List<PreviewItem> =
+        RetrofitClient.api.searchVideos(q).items
+
     suspend fun preview(subId: String, cursor: String? = null): PreviewResponse =
         RetrofitClient.api.preview(subId, cursor)
 

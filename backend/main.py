@@ -149,6 +149,13 @@ def search_sources(q: str, platform: str = "youtube"):
     return {"results": search_platform(q, platform)}
 
 
+@app.get("/search/videos")
+def search_videos(q: str):
+    """키워드로 YouTube 영상 검색 — 피드에 담을 수 있는 미리보기 아이템으로 반환"""
+    from scrapers.search import search_youtube_videos
+    return {"items": search_youtube_videos(q)}
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 class SettingsIn(BaseModel):
