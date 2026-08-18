@@ -14,6 +14,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.contentscurator.data.api.FeedItem
 import com.contentscurator.ui.subscriptions.PlatformBadge
+import com.contentscurator.ui.subscriptions.PreviewRow
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +55,8 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
         return
     }
 
+    var showSearch by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -56,6 +64,9 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
                 actions = {
                     IconButton(onClick = { vm.load() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "새로고침")
+                    }
+                    IconButton(onClick = { showSearch = true }) {
+                        Icon(Icons.Default.Search, contentDescription = "영상 검색")
                     }
                 }
             )
@@ -94,6 +105,67 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
             }
         }
     }
+
+    if (showSearch) {
+        VideoSearchDialog(vm = vm, onDismiss = { vm.clearSearch(); showSearch = false })
+    }
+}
+
+// ── 영상 검색 Dialog ──────────────────────────────────────────────────────────
+
+@Composable
+private fun VideoSearchDialog(vm: FeedViewModel, onDismiss: () -> Unit) {
+    val results by vm.searchResults.collectAsStateWithLifecycle()
+    val loading by vm.searchLoading.collectAsStateWithLifecycle()
+    val addingUrls by vm.addingUrls.collectAsStateWithLifecycle()
+    val addedUrls by vm.addedUrls.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+
+    AlertDialog(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss,
+        title = { Text("영상 검색") },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("키워드 입력") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    trailingIcon = {
+                        if (loading) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            IconButton(onClick = { vm.searchVideos(query) }) {
+                                Icon(Icons.Default.Search, contentDescription = null)
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { vm.searchVideos(query) }),
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyColumn {
+                    items(results, key = { it.source_url }) { item ->
+                        PreviewRow(
+                            item = item,
+                            added = item.in_feed || item.source_url in addedUrls,
+                            adding = item.source_url in addingUrls,
+                            onAdd = { vm.addToFeed(item) },
+                        )
+                        HorizontalDivider()
+                    }
+                }
+                if (!loading && results.isEmpty() && query.isNotBlank()) {
+                    Text("결과 없음", color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /** YouTube 영상이면 썸네일 URL. 그 외 플랫폼은 null. */

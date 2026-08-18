@@ -102,6 +102,9 @@ interface ApiService {
     @GET("search")
     suspend fun search(@Query("q") q: String, @Query("platform") platform: String): SearchResponse
 
+    @GET("search/videos")
+    suspend fun searchVideos(@Query("q") q: String): PreviewResponse
+
     @GET("subscriptions/{id}/preview")
     suspend fun preview(
         @Path("id") id: String,

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.contentscurator.data.ServerResolver
 import com.contentscurator.data.api.FeedItem
+import com.contentscurator.data.api.PreviewItem
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,41 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 _uiState.value = FeedUiState.Success(items, readSlugs, avatars)
             }.onFailure {
                 _uiState.value = FeedUiState.Error(it.message ?: "알 수 없는 오류")
+            }
+        }
+    }
+
+    // ── 영상 검색 ──
+    private val _searchResults = MutableStateFlow<List<PreviewItem>>(emptyList())
+    val searchResults: StateFlow<List<PreviewItem>> = _searchResults
+    private val _searchLoading = MutableStateFlow(false)
+    val searchLoading: StateFlow<Boolean> = _searchLoading
+    private val _addingUrls = MutableStateFlow<Set<String>>(emptySet())
+    val addingUrls: StateFlow<Set<String>> = _addingUrls
+    private val _addedUrls = MutableStateFlow<Set<String>>(emptySet())
+    val addedUrls: StateFlow<Set<String>> = _addedUrls
+
+    fun searchVideos(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            _searchLoading.value = true
+            _searchResults.value = runCatching { repo.searchVideos(query) }.getOrDefault(emptyList())
+            _searchLoading.value = false
+        }
+    }
+
+    fun clearSearch() {
+        _searchResults.value = emptyList()
+    }
+
+    fun addToFeed(item: PreviewItem) {
+        viewModelScope.launch {
+            _addingUrls.value += item.source_url
+            val result = runCatching { repo.addToFeed(item) }.getOrNull()
+            _addingUrls.value -= item.source_url
+            if (result?.status == "added" || result?.status == "exists") {
+                _addedUrls.value += item.source_url
+                load()
             }
         }
     }

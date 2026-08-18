@@ -95,6 +95,65 @@ def search_youtube(query: str, limit: int = 8) -> list[dict]:
     return channels
 
 
+def search_youtube_videos(query: str, limit: int = 15) -> list[dict]:
+    """YouTube 영상 검색 — 미리보기 아이템과 같은 모양으로 반환."""
+    try:
+        r = httpx.get(
+            "https://www.youtube.com/results",
+            params={"search_query": query, "sp": "EgIQAQ=="},  # 영상만
+            headers=_YT_HEADERS,
+            timeout=15,
+            follow_redirects=True,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        logger.warning(f"YouTube 영상 검색 실패: {e}")
+        return []
+
+    data = _yt_initial_data(r.text)
+    if not data:
+        return []
+
+    from scrapers.youtube import _make_slug
+    from vault.reader import get_item
+
+    videos = []
+    try:
+        sections = (
+            data["contents"]["twoColumnSearchResultsRenderer"]
+            ["primaryContents"]["sectionListRenderer"]["contents"]
+        )
+        for section in sections:
+            for item in section.get("itemSectionRenderer", {}).get("contents", []):
+                vr = item.get("videoRenderer")
+                if not vr:
+                    continue
+                video_id = vr.get("videoId", "")
+                title = "".join(r.get("text", "") for r in vr.get("title", {}).get("runs", []))
+                if not video_id or not title:
+                    continue
+                owner = vr.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
+                videos.append({
+                    "title": title,
+                    "source_url": f"https://www.youtube.com/watch?v={video_id}",
+                    "date": vr.get("publishedTimeText", {}).get("simpleText", ""),
+                    "platform": "youtube",
+                    "author": owner,
+                    "type": "video",
+                    "video_id": video_id,
+                    "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    "in_feed": get_item(_make_slug(video_id)) is not None,
+                })
+                if len(videos) >= limit:
+                    break
+            if len(videos) >= limit:
+                break
+    except (KeyError, TypeError) as e:
+        logger.warning(f"YouTube 영상 결과 파싱 실패: {e}")
+
+    return videos
+
+
 _MEDIUM_LINK = re.compile(r"https?://(?:([^./]+)\.medium\.com|medium\.com/(@?[^/?]+))/")
 
 
