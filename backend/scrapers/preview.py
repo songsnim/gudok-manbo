@@ -1,6 +1,7 @@
 import logging
 
 import feedparser
+import httpx
 
 from vault.reader import get_item
 from vault.writer import write_item
@@ -25,10 +26,35 @@ def _feed_url_for(sub: dict) -> str | None:
     return None
 
 
+def _substack_entries(feed_url: str, offset: int, limit: int) -> list[dict] | None:
+    """Substack archive API로 과거 글까지 페이지네이션. 실패하면 None(→ RSS 폴백).
+
+    RSS는 최근 20개뿐이라 그 너머로 스크롤하려면 이 API가 필요하다.
+    """
+    base = feed_url.rsplit("/feed", 1)[0]
+    try:
+        r = httpx.get(
+            f"{base}/api/v1/archive",
+            params={"sort": "new", "offset": offset, "limit": limit},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=15, follow_redirects=True,
+        )
+        r.raise_for_status()
+        posts = r.json()
+    except Exception as e:
+        logger.warning(f"Substack archive 조회 실패 ({base}): {e}")
+        return None
+    return [{
+        "link": p.get("canonical_url", ""),
+        "title": p.get("title", ""),
+        "published": (p.get("post_date") or "")[:10],
+    } for p in posts]
+
+
 def preview_source(sub: dict, limit: int = 10, cursor: str | None = None) -> dict:
     """구독 소스의 글/영상 목록 + 다음 커서 (저장·요약 없음).
 
-    YouTube만 무한 스크롤(커서) 지원. 나머지는 RSS라 다음 페이지가 없음.
+    YouTube는 innertube continuation 토큰, 피드 기반 플랫폼은 오프셋 커서를 쓴다.
+    LinkedIn만 페이지네이션 없음.
     """
     platform = sub.get("platform", "")
     author = sub.get("author", "")
@@ -53,10 +79,9 @@ def preview_source(sub: dict, limit: int = 10, cursor: str | None = None) -> dic
         } for v in videos]
         return {"items": items, "next_cursor": next_cursor}
 
-    if cursor:
-        return {"items": [], "next_cursor": None}  # 피드 기반은 페이지네이션 없음
-
     if platform == "linkedin":
+        if cursor:
+            return {"items": [], "next_cursor": None}  # 스크래핑이라 페이지네이션 없음
         from scrapers.linkedin import fetch_posts, _slug
         try:
             posts = fetch_posts(sub.get("feed_url", ""), limit)
@@ -81,9 +106,15 @@ def preview_source(sub: dict, limit: int = 10, cursor: str | None = None) -> dic
         return {"items": [], "next_cursor": None}  # 피드 URL 없는 플랫폼
 
     from scrapers.rss import _make_slug, entry_date
-    feed = feedparser.parse(feed_url)
+    offset = int(cursor) if cursor and cursor.isdigit() else 0
+
+    entries = _substack_entries(feed_url, offset, limit) if platform == "substack" else None
+    if entries is None:
+        # ponytail: 페이지마다 피드 전체를 다시 파싱한다. 피드가 수십 개 규모라 캐시 불필요
+        entries = feedparser.parse(feed_url).entries[offset:offset + limit]
+
     items = []
-    for entry in feed.entries[:limit]:
+    for entry in entries:
         url = entry.get("link", "")
         if not url:
             continue
@@ -102,7 +133,9 @@ def preview_source(sub: dict, limit: int = 10, cursor: str | None = None) -> dic
             "feed_url": feed_url,
             "in_feed": get_item(slug) is not None,
         })
-    return {"items": items, "next_cursor": None}
+    # 한 페이지를 꽉 채웠으면 더 있을 수 있다고 본다
+    next_cursor = str(offset + limit) if len(entries) == limit else None
+    return {"items": items, "next_cursor": next_cursor}
 
 
 def add_item(item: dict) -> dict:
