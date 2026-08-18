@@ -109,22 +109,6 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
                     subscription=True,
                     limit=limit,
                 )
-            elif platform == "threads":
-                from scrapers.threads import scrape_profile as scrape_threads
-                slugs = scrape_threads(
-                    username=sub["username"],
-                    author=author,
-                    subscription=True,
-                    limit=limit,
-                )
-            elif platform in ("twitter", "x"):
-                from scrapers.twitter import scrape_user
-                slugs = scrape_user(
-                    username=sub["username"],
-                    author=author,
-                    subscription=True,
-                    limit=limit,
-                )
             elif platform == "linkedin":
                 from scrapers.linkedin import scrape_profile as scrape_linkedin
                 slugs = scrape_linkedin(
@@ -145,14 +129,6 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
                 from scrapers.substack import scrape_publication
                 slugs = scrape_publication(
                     publication=sub.get("username") or sub["feed_url"],
-                    author=author,
-                    subscription=True,
-                    limit=limit,
-                )
-            elif platform == "devto":
-                from scrapers.devto import scrape_user as scrape_devto
-                slugs = scrape_devto(
-                    username=sub["username"],
                     author=author,
                     subscription=True,
                     limit=limit,

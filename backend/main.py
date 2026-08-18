@@ -106,13 +106,15 @@ class AddItemIn(BaseModel):
     author: str = ""
     title: str = ""
     type: str = "article"
+    date: str = ""  # 미리보기에서 본 게시일
     video_id: Optional[str] = None
     body: str = ""  # LinkedIn 등 포스트 자체가 본문인 경우
+    feed_url: str = ""  # 본문을 되찾을 RSS 피드 (원문 직접 요청이 막힌 경우용)
 
 
 @app.post("/feed/add")
 def add_feed_item(body: AddItemIn):
-    """미리보기 아이템을 피드로 옮김 (영상=재구성, 글=요약)"""
+    """미리보기 아이템을 피드로 옮김 (영상=재구성, 글=원문 그대로)"""
     from scrapers.preview import add_item
     return add_item(body.model_dump())
 
@@ -142,9 +144,16 @@ def agent_discover(body: DiscoverIn):
 
 @app.get("/search")
 def search_sources(q: str, platform: str = "youtube"):
-    """키워드로 구독 가능한 채널/계정 검색 (youtube | substack | devto)"""
+    """키워드로 구독 가능한 채널/계정 검색 (youtube | medium | linkedin)"""
     from scrapers.search import search_platform
     return {"results": search_platform(q, platform)}
+
+
+@app.get("/search/videos")
+def search_videos(q: str):
+    """키워드로 YouTube 영상 검색 — 피드에 담을 수 있는 미리보기 아이템으로 반환"""
+    from scrapers.search import search_youtube_videos
+    return {"items": search_youtube_videos(q)}
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────

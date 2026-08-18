@@ -139,7 +139,6 @@ _DISCOVER_PROMPT = """\
 - youtube   : channel_id 필요 (예: UCXv...)
 - medium    : username 필요 (예: @username 또는 pub/publication-name)
 - substack  : username 필요 (예: stratechery — .substack.com 제외)
-- devto     : username 필요 (예: tiangolo)
 - hackernews: username에 피드 타입 (frontpage|best|ask|show)
 - rss       : feed_url 필요 (직접 RSS URL)
 
@@ -156,7 +155,7 @@ _DISCOVER_PROMPT = """\
 {{
   "sources": [
     {{
-      "platform": "youtube|medium|substack|devto|hackernews|rss",
+      "platform": "youtube|medium|substack|hackernews|rss",
       "author": "표시될 이름",
       "username": "유저명 (youtube 제외)",
       "channel_id": "채널 ID (youtube만, 나머지는 null)",

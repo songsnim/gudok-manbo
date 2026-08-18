@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +51,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 // ── URL 자동 파싱 ──────────────────────────────────────────────────────────────
+
+/** 파싱은 됐지만 구독은 못 하는 URL (Threads/X/Dev.to). */
+const val UNSUPPORTED = "unsupported"
 
 data class ParsedSub(
     val platform: String,
@@ -84,21 +90,11 @@ fun parseUrl(raw: String): ParsedSub? {
                 ?: Regex("medium\\.com/([^/@?][^/?]*)").find(url)?.groupValues?.get(1) ?: ""
             ParsedSub("medium", username, null, null, username)
         }
-        "threads.net" in url -> {
-            val username = Regex("threads\\.net/@([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("threads", "@$username", null, null, username)
-        }
-        "twitter.com" in url || "x.com" in url -> {
-            val username = Regex("(?:twitter|x)\\.com/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("twitter", "@$username", null, null, username)
-        }
+        "threads.net" in url || "twitter.com" in url || "x.com" in url || "dev.to" in url ->
+            ParsedSub(UNSUPPORTED, "", null, null, null, hint = "지원하지 않는 플랫폼입니다.")
         "linkedin.com" in url -> {
             val name = Regex("linkedin\\.com/(?:company|in)/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
             ParsedSub("linkedin", name, null, url, null)
-        }
-        "dev.to" in url -> {
-            val username = Regex("dev\\.to/([^/?]+)").find(url)?.groupValues?.get(1) ?: ""
-            ParsedSub("devto", username, null, null, username)
         }
         "hashnode" in url -> {
             val username = Regex("([^.]+)\\.hashnode\\.dev").find(url)?.groupValues?.get(1) ?: ""
@@ -113,12 +109,10 @@ fun parseUrl(raw: String): ParsedSub? {
 
 fun platformColor(platform: String): Color = when (platform.lowercase()) {
     "youtube" -> Color(0xFFFF0000)
-    "medium" -> Color(0xFF000000)
+    // 원래 브랜드색이 검정인 플랫폼은 다크 배경에서 안 보이므로 밝은 회색으로
+    "medium" -> Color(0xFF3C4043)
     "linkedin" -> Color(0xFF0A66C2)
-    "x", "twitter" -> Color(0xFF000000)
-    "threads" -> Color(0xFF000000)
     "substack" -> Color(0xFFFF6719)
-    "devto" -> Color(0xFF0A0A0A)
     "hackernews" -> Color(0xFFFF6600)
     else -> Color(0xFF888888)
 }
@@ -127,12 +121,10 @@ fun platformLabel(platform: String): String = when (platform.lowercase()) {
     "youtube" -> "YouTube"
     "medium" -> "Medium"
     "linkedin" -> "LinkedIn"
-    "x", "twitter" -> "X / Twitter"
-    "threads" -> "Threads"
     "substack" -> "Substack"
-    "devto" -> "Dev.to"
     "hackernews" -> "HackerNews"
     "rss" -> "RSS"
+    UNSUPPORTED -> "미지원"
     else -> platform
 }
 
@@ -348,7 +340,7 @@ fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
             items(items, key = { it.id }) { sub ->
                 ListItem(
                     modifier = Modifier.clickable { vm.openPreview(sub) },
-                    leadingContent = { PlatformBadge(sub.platform) },
+                    leadingContent = { PlatformBadge(sub.platform, size = 28) },
                     headlineContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (!sub.avatar_url.isNullOrBlank()) {
@@ -360,12 +352,13 @@ fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text(sub.author, fontWeight = FontWeight.Medium)
-                        }
-                    },
-                    supportingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(platformLabel(sub.platform), fontSize = 12.sp)
+                            Text(
+                                sub.author,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
                             Spacer(Modifier.width(8.dp))
                             PriorityChip(
                                 priority = sub.priority,
@@ -392,14 +385,14 @@ fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
     }
 
     if (showSearchSheet) {
-        SearchBottomSheet(
+        SearchDialog(
             vm = vm,
             onDismiss = { vm.clearSearch(); showSearchSheet = false }
         )
     }
 
     previewSub?.let { sub ->
-        PreviewBottomSheet(vm = vm, sub = sub, onDismiss = { vm.closePreview() })
+        PreviewDialog(vm = vm, sub = sub, onDismiss = { vm.closePreview() })
     }
 
     if (showSettings) {
@@ -411,7 +404,7 @@ fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
 
 fun nextPriority(p: Int): Int = when (p) { 1 -> 2; 2 -> 3; else -> 1 }
 
-private fun priorityLabel(p: Int) = when (p) { 1 -> "높음"; 3 -> "낮음"; else -> "보통" }
+private fun priorityLabel(p: Int) = "P$p"
 private fun priorityColor(p: Int) = when (p) {
     1 -> Color(0xFFE53935); 3 -> Color(0xFF1E88E5); else -> Color(0xFF9E9E9E)
 }
@@ -426,7 +419,7 @@ private fun PriorityChip(priority: Int, onClick: () -> Unit) {
             .padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
         Text(
-            "우선순위 ${priorityLabel(priority)}",
+            priorityLabel(priority),
             fontSize = 11.sp,
             color = priorityColor(priority),
             fontWeight = FontWeight.Medium,
@@ -490,11 +483,10 @@ private fun QuotaDialog(vm: SubscriptionsViewModel, onDismiss: () -> Unit) {
     )
 }
 
-// ── 최신 글/영상 미리보기 Bottom Sheet ────────────────────────────────────────
+// ── 최신 글/영상 미리보기 Dialog ──────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PreviewBottomSheet(
+private fun PreviewDialog(
     vm: SubscriptionsViewModel,
     sub: Subscription,
     onDismiss: () -> Unit,
@@ -512,34 +504,33 @@ private fun PreviewBottomSheet(
             .collect { last -> if (items.isNotEmpty() && last >= items.size - 5) vm.loadMorePreview() }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 600.dp)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-        ) {
+    AlertDialog(
+        // 기본 폭이 좁아서 해제. 좌우 여백을 남겨 뒤 화면이 보이게 한다
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss,
+        title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PlatformBadge(sub.platform, size = 28)
                 Spacer(Modifier.width(8.dp))
                 Text(sub.author, style = MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(12.dp))
-
+        },
+        text = {
             when {
                 loading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
                 items.isEmpty() -> Text(
-                    "미리보기를 가져올 수 없습니다.\n(LinkedIn/X/Threads는 미지원)",
+                    "미리보기를 가져올 수 없습니다.\n(LinkedIn은 쿠키 설정 필요)",
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
                 else -> LazyColumn(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.heightIn(max = 480.dp),
                 ) {
                     items(items, key = { it.source_url }) { item ->
                         val added = item.in_feed || item.source_url in addedUrls
@@ -558,12 +549,13 @@ private fun PreviewBottomSheet(
                     }
                 }
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 @Composable
-private fun PreviewRow(
+internal fun PreviewRow(
     item: PreviewItem,
     added: Boolean,
     adding: Boolean,
@@ -611,8 +603,7 @@ private fun PreviewRow(
 fun PlatformBadge(platform: String, size: Int = 36) {
     val emoji = when (platform.lowercase()) {
         "youtube" -> "▶"; "medium" -> "M"; "linkedin" -> "in"
-        "x", "twitter" -> "X"; "threads" -> "@"; "substack" -> "S"
-        "devto" -> "D"; "hackernews" -> "Y"; else -> "·"
+        "substack" -> "S"; "hackernews" -> "Y"; else -> "·"
     }
     Box(
         modifier = Modifier
@@ -624,11 +615,10 @@ fun PlatformBadge(platform: String, size: Int = 36) {
     }
 }
 
-// ── 채널 검색 Bottom Sheet ────────────────────────────────────────────────────
+// ── 채널 검색 Dialog ──────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchBottomSheet(vm: SubscriptionsViewModel, onDismiss: () -> Unit) {
+private fun SearchDialog(vm: SubscriptionsViewModel, onDismiss: () -> Unit) {
     val searchResults by vm.searchResults.collectAsStateWithLifecycle()
     val searchLoading by vm.searchLoading.collectAsStateWithLifecycle()
     val subscribedIds by vm.subscribedIds.collectAsStateWithLifecycle()
@@ -637,21 +627,21 @@ private fun SearchBottomSheet(vm: SubscriptionsViewModel, onDismiss: () -> Unit)
     var platform by remember { mutableStateOf("youtube") }
     val platforms = listOf(
         "youtube" to "YouTube",
-        "devto" to "Dev.to",
-        "linkedin" to "LinkedIn",
-        "twitter" to "X (Twitter)",
+        "medium" to "Medium",
     )
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AlertDialog(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss,
+        title = { Text("채널 / 계정 검색") },
+        text = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
+                .heightIn(max = 480.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Text("채널 / 계정 검색", style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 16.dp))
-
             // 플랫폼 선택
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(platforms) { (key, label) ->
@@ -702,7 +692,9 @@ private fun SearchBottomSheet(vm: SubscriptionsViewModel, onDismiss: () -> Unit)
                     modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
             }
         }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 @Composable
@@ -771,8 +763,8 @@ private fun AddByUrlDialog(
     }
 
     val isYoutube = parsed?.platform == "youtube"
-    val canConfirm = parsed != null && authorInput.isNotBlank() &&
-        (!isYoutube || channelIdInput.isNotBlank())
+    val canConfirm = parsed != null && parsed.platform != UNSUPPORTED &&
+        authorInput.isNotBlank() && (!isYoutube || channelIdInput.isNotBlank())
 
     AlertDialog(
         onDismissRequest = onDismiss,
