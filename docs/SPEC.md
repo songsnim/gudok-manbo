@@ -63,13 +63,14 @@ PC (Windows, 항상 켜짐)
 
 | 플랫폼 | 접근 방식 | 비고 |
 |---|---|---|
-| YouTube | YouTube Data API v3 + 자막 추출 | 무료 |
+| YouTube | 채널 RSS + innertube + 자막 추출 | 무료 |
 | Medium | RSS 피드 | 무료 |
-| 뉴스 | RSS 피드 | 무료 |
 | Substack | RSS 피드 | 무료 |
+| HackerNews | hnrss.org 피드 | 무료 |
+| RSS (일반) | RSS 피드 | 무료 |
 | LinkedIn | Playwright 브라우저 자동화 | ToS 리스크 감수, 개인 계정 사용 |
-| X (Twitter) | Playwright 브라우저 자동화 | ToS 리스크 감수, 개인 계정 사용 |
-| Threads | Playwright 브라우저 자동화 | 불안정 허용 |
+
+Threads / X(Twitter) / Dev.to는 지원하지 않는다. 앞의 둘은 브라우저 자동화·계정 인증·DOM 셀렉터 부패로 수집 방식이 다른 플랫폼과 통일되지 않아서, Dev.to는 플랫폼 수를 줄이기 위해 제외했다.
 
 ### 2-5. LLM 역할 분담
 
@@ -86,7 +87,7 @@ PC (Windows, 항상 켜짐)
 ```markdown
 ---
 title: "제목 (없으면 AI 생성)"
-platform: youtube | linkedin | x | medium | news | threads | substack
+platform: youtube | linkedin | medium | substack | hackernews | rss
 source_url: "https://..."
 author: "채널명 또는 계정명"
 date: 2026-05-31

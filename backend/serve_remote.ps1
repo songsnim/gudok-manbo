@@ -1,4 +1,4 @@
-# Contents Curator — 백엔드 + Cloudflare Quick Tunnel 런처
+﻿# Contents Curator — 백엔드 + Cloudflare Quick Tunnel 런처
 #
 # uvicorn(0.0.0.0:8000)과 cloudflared quick tunnel을 띄우고, 생성된 공개 HTTPS 주소를
 # data\tunnel_url.txt 에 기록하고 화면에 출력한다. 그 주소를 폰 앱의 "서버 주소" 설정에 입력하면
@@ -7,11 +7,23 @@
 # 사전 준비: cloudflared 설치
 #   winget install --id Cloudflare.cloudflared
 #
-# 주의: quick tunnel 주소는 이 스크립트(또는 PC)를 재시작하면 바뀐다.
-#       바뀌면 새 주소를 앱 설정에 다시 붙여넣으면 된다(재빌드 불필요).
+# 주의: quick tunnel 주소는 cloudflared를 재시작하면 바뀐다. Gist 포인터가 자동 갱신되므로
+#       앱에서 다시 입력할 필요는 없다.
+#
+# 이 스크립트는 몇 분 간격으로 반복 실행되는 워치독을 겸한다(register_autostart.ps1 참고).
+# 그래서 uvicorn/cloudflared 각각 "이미 살아 있으면 건드리지 않는다"가 되어야 한다.
+# 둘은 독립 프로세스라서, uvicorn만 죽으면 터널은 살아 있고 앱은 502를 받는다.
 
 $ErrorActionPreference = "Stop"
 $WorkDir = $PSScriptRoot
+$DataDir = Join-Path $WorkDir "data"
+New-Item -ItemType Directory -Force $DataDir | Out-Null
+$tunnelLog  = Join-Path $DataDir "tunnel.log"
+$urlFile    = Join-Path $DataDir "tunnel_url.txt"
+$uvicornLog = Join-Path $DataDir "uvicorn.log"
+
+# 상위 셸/워치독이 죽어도 같이 끌려가지 않게 job 밖으로 띄운다
+$shell = New-Object -ComObject WScript.Shell
 
 # ── cloudflared 확인 ─────────────────────────────────────────────────────────
 if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
@@ -25,34 +37,48 @@ $listening = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Sil
 if ($listening) {
     Write-Host "[1/2] uvicorn 이미 실행 중 (8000)"
 } else {
-    Start-Process -FilePath $Python `
-        -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8000" `
-        -WorkingDirectory $WorkDir -WindowStyle Hidden | Out-Null
-    Write-Host "[1/2] uvicorn 시작 (0.0.0.0:8000)"
-    Start-Sleep -Seconds 2
+    # WScript.Shell.Run으로 띄운다. Start-Process로 띄우면 uvicorn이 이 스크립트의 job에
+    # 묶여, 워치독이나 상위 셸이 죽을 때 함께 끌려 내려간다 — 502의 실제 원인이었다.
+    # cmd 리다이렉트(>>)라서 로그는 덮어쓰지 않고 이어붙는다.
+    $cmd = 'cmd /c cd /d "{0}" && "{1}" -m uvicorn main:app --host 0.0.0.0 --port 8000 >> "{2}" 2>&1' `
+        -f $WorkDir, $Python, $uvicornLog
+    $shell.Run($cmd, 0, $false) | Out-Null
+    Write-Host "[1/2] uvicorn 시작 (0.0.0.0:8000) — 로그: $uvicornLog"
+    Start-Sleep -Seconds 4
+    if (-not (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue)) {
+        Write-Host "  경고: 8000 포트가 안 열렸다. $uvicornLog 확인:"
+        Get-Content $uvicornLog -Tail 15 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    $_" }
+    }
 }
 
-# ── 2. cloudflared quick tunnel ──────────────────────────────────────────────
-$tunnelLog = Join-Path $WorkDir "data\tunnel.log"
-New-Item -ItemType Directory -Force (Split-Path $tunnelLog) | Out-Null
-Remove-Item $tunnelLog -ErrorAction SilentlyContinue
-Start-Process -FilePath "cloudflared" `
-    -ArgumentList "tunnel","--url","http://localhost:8000","--logfile",$tunnelLog `
-    -WindowStyle Hidden | Out-Null
-Write-Host "[2/2] cloudflared quick tunnel 시작 — 주소 발급 대기..."
-
-# 로그에서 공개 주소 추출
+# ── 2. cloudflared quick tunnel (이미 떠 있으면 그대로 둔다) ─────────────────
 $url = $null
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Seconds 1
-    if (Test-Path $tunnelLog) {
-        $m = Select-String -Path $tunnelLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($m) { $url = $m.Matches[0].Value; break }
+if (Get-Process cloudflared -ErrorAction SilentlyContinue) {
+    Write-Host "[2/2] cloudflared 이미 실행 중 — 기존 터널 유지"
+    $m = Select-String -Path $tunnelLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($m) { $url = $m.Matches[0].Value }
+} else {
+    Remove-Item $tunnelLog -ErrorAction SilentlyContinue
+    $cf = (Get-Command cloudflared).Source
+    $shell.Run(('"{0}" tunnel --url http://localhost:8000 --logfile "{1}"' -f $cf, $tunnelLog), 0, $false) | Out-Null
+    Write-Host "[2/2] cloudflared quick tunnel 시작 — 주소 발급 대기..."
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Seconds 1
+        if (Test-Path $tunnelLog) {
+            $m = Select-String -Path $tunnelLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($m) { $url = $m.Matches[0].Value; break }
+        }
     }
 }
 
 if ($url) {
-    "$url/" | Out-File (Join-Path $WorkDir "data\tunnel_url.txt") -Encoding ascii -NoNewline
+    # 주소가 그대로면 Gist를 건드리지 않는다 — 워치독이 몇 분마다 도니까
+    $prevUrl = if (Test-Path $urlFile) { (Get-Content $urlFile -Raw).Trim() } else { "" }
+    if ($prevUrl -eq "$url/") {
+        Write-Host "공개 주소 변동 없음: $url/"
+        return
+    }
+    "$url/" | Out-File $urlFile -Encoding ascii -NoNewline
 
     # ── 고정 포인터(GitHub Gist) 자동 갱신 ───────────────────────────────────
     # .env의 GITHUB_GIST_TOKEN/GIST_ID가 있으면 새 주소를 Gist에 기록한다.

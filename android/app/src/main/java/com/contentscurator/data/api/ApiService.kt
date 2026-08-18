@@ -14,6 +14,7 @@ data class FeedItem(
     val date: String,
     val subscription: Boolean,
     val body: String,
+    val published: String = "",  // 매체 게시일. 비어 있으면 date(수집일)로 대체
 )
 
 @JsonClass(generateAdapter = true)
@@ -101,6 +102,9 @@ interface ApiService {
     @GET("search")
     suspend fun search(@Query("q") q: String, @Query("platform") platform: String): SearchResponse
 
+    @GET("search/videos")
+    suspend fun searchVideos(@Query("q") q: String): PreviewResponse
+
     @GET("subscriptions/{id}/preview")
     suspend fun preview(
         @Path("id") id: String,
@@ -137,6 +141,7 @@ data class PreviewItem(
     val thumbnail: String?,
     val in_feed: Boolean,
     val body: String? = null,
+    val feed_url: String = "",
 )
 
 @JsonClass(generateAdapter = true)
@@ -149,8 +154,10 @@ data class AddItemRequest(
     val author: String,
     val title: String,
     val type: String,
+    val date: String = "",
     val video_id: String?,
     val body: String = "",
+    val feed_url: String = "",
 )
 
 @JsonClass(generateAdapter = true)

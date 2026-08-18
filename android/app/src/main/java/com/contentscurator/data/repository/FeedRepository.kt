@@ -59,6 +59,9 @@ class FeedRepository(private val db: AppDatabase) {
     suspend fun search(q: String, platform: String): List<SearchResult> =
         RetrofitClient.api.search(q, platform).results
 
+    suspend fun searchVideos(q: String): List<PreviewItem> =
+        RetrofitClient.api.searchVideos(q).items
+
     suspend fun preview(subId: String, cursor: String? = null): PreviewResponse =
         RetrofitClient.api.preview(subId, cursor)
 
@@ -69,7 +72,9 @@ class FeedRepository(private val db: AppDatabase) {
             author = item.author,
             title = item.title,
             type = item.type,
+            date = item.date,
             video_id = item.video_id,
             body = item.body ?: "",
+            feed_url = item.feed_url,
         ))
 }

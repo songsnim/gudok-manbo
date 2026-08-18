@@ -35,27 +35,6 @@ def _og_image(url: str, cookies: list | None = None) -> str | None:
         return None
 
 
-def _devto_avatar(username: str) -> str | None:
-    try:
-        r = httpx.get(
-            "https://dev.to/api/users/by_username",
-            params={"url": username.lstrip("@")},
-            headers={"Accept": "application/json"},
-            timeout=10,
-        )
-        r.raise_for_status()
-        return r.json().get("profile_image")
-    except Exception as e:
-        logger.warning(f"Dev.to 아바타 조회 실패 ({username}): {e}")
-        return None
-
-
-def _twitter_avatar(username: str) -> str | None:
-    from scrapers.search import search_twitter
-    results = search_twitter(username)
-    return results[0].get("avatar_url") if results else None
-
-
 def fetch_avatar(sub: dict) -> str | None:
     """구독 소스의 프로필 이미지 URL을 해석. 실패 시 None."""
     platform = sub.get("platform", "")
@@ -74,16 +53,6 @@ def fetch_avatar(sub: dict) -> str | None:
             if "." not in pub:
                 pub = f"{pub}.substack.com"
             return _og_image(f"https://{pub}")
-
-    if platform == "devto" and sub.get("username"):
-        return _devto_avatar(sub["username"])
-
-    if platform == "threads" and sub.get("username"):
-        u = sub["username"].lstrip("@")
-        return _og_image(f"https://www.threads.net/@{u}")
-
-    if platform in ("twitter", "x") and sub.get("username"):
-        return _twitter_avatar(sub["username"])
 
     if platform == "linkedin" and sub.get("feed_url"):
         cookies = None
