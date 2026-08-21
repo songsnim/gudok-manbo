@@ -1,7 +1,10 @@
 import json
+import logging
 import re
 import httpx
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -84,31 +87,49 @@ _TITLE_PROMPT = {
 }
 
 
-def _chat(prompt: str, model: str, temperature: float = 0.3) -> str:
+def _chat(prompt: str, temperature: float = 0.3, **extra) -> str:
+    """model_chain을 순서대로 시도. free tier는 429가 상시로 뜨고,
+    reasoning 모델은 추론 토큰이 출력 예산을 다 먹으면 빈 content를 준다."""
     if not settings.openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
-    resp = httpx.post(
-        _API_URL,
-        headers={
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
-            "HTTP-Referer": "https://github.com/contents-curator",
-            "X-Title": "Contents Curator",
-        },
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-        },
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
+
+    errors = []
+    for model in settings.model_chain:
+        resp = httpx.post(
+            _API_URL,
+            headers={
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "HTTP-Referer": "https://github.com/contents-curator",
+                "X-Title": "Contents Curator",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+                **extra,
+            },
+            timeout=300,
+        )
+        if resp.status_code == 429:
+            logger.warning(f"{model}: rate limited, 다음 모델로")
+            errors.append(f"{model}: 429")
+            continue
+        resp.raise_for_status()
+        choice = resp.json()["choices"][0]
+        content = choice["message"]["content"].strip()
+        if content:
+            return content
+        # 빈 응답을 그대로 넘기면 Vault에 빈 글이 저장된다
+        logger.warning(f"{model}: 빈 응답 (finish={choice.get('finish_reason')}), 다음 모델로")
+        errors.append(f"{model}: empty ({choice.get('finish_reason')})")
+
+    raise RuntimeError(f"모든 모델 실패 — {', '.join(errors)}")
 
 
 def transcribe_to_article(transcript: str) -> str:
     """영상 자막을 내용 손실 없이 구조화된 글로 재구성."""
     prompt = _ARTICLE_PROMPT[settings.summary_language] + transcript[:60000]
-    return _chat(prompt, settings.openrouter_summary_model)
+    return _chat(prompt)
 
 
 def summarize_article(body: str) -> str:
@@ -118,18 +139,18 @@ def summarize_article(body: str) -> str:
     그래도 남으면 해당 문자를 제거해 한국어/영어만 남긴다.
     """
     prompt = _SUMMARY_PROMPT[settings.summary_language] + body[:60000]
-    md = _chat(prompt, settings.openrouter_summary_model)
+    md = _chat(prompt)
     for _ in range(2):
         if not _FORBIDDEN_CHARS.search(md):
             return md
-        md = _chat(prompt, settings.openrouter_summary_model)
+        md = _chat(prompt)
     return _FORBIDDEN_CHARS.sub("", md)
 
 
 def generate_title(content: str) -> str:
     """글 내용으로 제목 생성."""
     prompt = _TITLE_PROMPT[settings.summary_language] + content[:3000]
-    return _chat(prompt, settings.openrouter_summary_model)
+    return _chat(prompt)
 
 
 _DISCOVER_PROMPT = """\
@@ -168,39 +189,13 @@ _DISCOVER_PROMPT = """\
 
 def discover_sources(query: str, existing: list[dict]) -> list[dict]:
     """OpenRouter LLM에 소스 추천 요청. 파싱된 source 목록 반환."""
-    if not settings.openrouter_api_key:
-        raise RuntimeError("OPENROUTER_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
-
     existing_summary = ", ".join(
         f"{s.get('author', '')} ({s.get('platform', '')})"
         for s in existing
     ) or "없음"
 
     prompt = _DISCOVER_PROMPT.format(query=query, existing=existing_summary)
-
-    resp = httpx.post(
-        _API_URL,
-        headers={
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
-            "HTTP-Referer": "https://github.com/contents-curator",
-            "X-Title": "Contents Curator",
-        },
-        json={
-            "model": settings.openrouter_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.4,
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-
-    content = resp.json()["choices"][0]["message"]["content"].strip()
-
-    # JSON 블록 추출 (```json ... ``` 래핑 대응)
-    if "```" in content:
-        content = content.split("```")[1]
-        if content.startswith("json"):
-            content = content[4:]
+    content = _chat(prompt, temperature=0.4, response_format={"type": "json_object"})
 
     data = json.loads(content)
     return data.get("sources", [])
