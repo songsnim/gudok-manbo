@@ -2,10 +2,12 @@ import json
 import re
 import feedparser
 import httpx
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from youtube_transcript_api import (
+    YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled, IpBlocked,
+)
 
 from llm.openrouter_client import transcribe_to_article, generate_title
-from scrapers.rss import entry_date
+from scrapers.rss import entry_date, recent_entries
 from vault.writer import write_item
 
 
@@ -104,18 +106,60 @@ def video_published(video_id: str) -> str:
         return ""
 
 
-_yt_api = YouTubeTranscriptApi()
-
 def _get_transcript(video_id: str) -> str | None:
+    transcript, reason = transcript_or_reason(video_id)
+    if reason:
+        import logging
+        logging.getLogger(__name__).warning(f"자막 조회 실패 ({video_id}): {reason}")
+    return transcript
+
+
+def transcript_or_reason(video_id: str) -> tuple[str | None, str]:
+    """자막과 실패 이유. 짧은 시간에 많이 담으면 YouTube가 IP를 막으므로 구분해서 알린다.
+
+    인스턴스를 재사용하면 내부 requests.Session이 스레드 간 공유되므로 매번 새로 만든다.
+    """
     try:
-        transcript = _yt_api.fetch(video_id, languages=["ko", "en"])
-        return " ".join(s.text for s in transcript)
-    except Exception:
-        return None
+        transcript = YouTubeTranscriptApi().fetch(video_id, languages=["ko", "en"])
+        return " ".join(s.text for s in transcript), ""
+    except IpBlocked:
+        return None, "YouTube가 이 IP를 일시 차단했습니다. 잠시 후 다시 담아주세요"
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return None, "자막 없음"
+    except Exception as e:
+        return None, f"자막 조회 실패: {type(e).__name__}"
 
 
 def _make_slug(video_id: str) -> str:
     return f"yt-{video_id}"
+
+
+def _video_id(entry) -> str:
+    return entry.get("yt_videoid") or re.search(r"v=([^&]+)", entry.link).group(1)
+
+
+def is_short(video_id: str) -> bool:
+    """쇼츠 여부. /shorts/<id>는 쇼츠면 200, 일반 영상이면 /watch로 리다이렉트한다."""
+    try:
+        r = httpx.head(f"https://www.youtube.com/shorts/{video_id}",
+                       headers=_HEADERS, timeout=10, follow_redirects=False)
+        return r.status_code == 200
+    except Exception:
+        return False  # 판별 실패는 일반 영상으로 취급
+
+
+def shorts_last(entries):
+    """일반 영상 먼저, 쇼츠는 맨 뒤로. 담을 게 없을 때의 최후 수단으로만 쇼츠가 쓰인다.
+
+    제너레이터라서 소비자가 limit을 채우고 멈추면 나머지는 쇼츠 판별 요청도 하지 않는다.
+    """
+    deferred = []
+    for entry in entries:
+        if is_short(_video_id(entry)):
+            deferred.append(entry)
+        else:
+            yield entry
+    yield from deferred
 
 
 def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int = 3) -> list[str]:
@@ -127,8 +171,11 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
     log = logging.getLogger(__name__)
     log.info(f"피드 엔트리 수: {len(feed.entries)}")
 
-    for entry in feed.entries[:limit]:
-        video_id = entry.get("yt_videoid") or re.search(r"v=([^&]+)", entry.link).group(1)
+    # limit은 쇼츠 후순위 정렬 뒤에 적용해야 한다. 먼저 자르면 앞쪽 쇼츠 때문에 일반 영상을 놓친다
+    for entry in shorts_last(recent_entries(feed.entries, len(feed.entries))):
+        if len(saved) >= limit:
+            break
+        video_id = _video_id(entry)
         slug = _make_slug(video_id)
         log.info(f"처리 중: {video_id} / {entry.get('title', '')[:40]}")
 

@@ -145,15 +145,16 @@ def add_item(item: dict) -> dict:
     author = item.get("author", "")
 
     if platform == "youtube":
-        from scrapers.youtube import _make_slug, _get_transcript, video_published
+        from scrapers.youtube import _make_slug, transcript_or_reason, video_published
         from llm.openrouter_client import transcribe_to_article, generate_title
         video_id = item.get("video_id", "")
         slug = _make_slug(video_id)
         if get_item(slug):
             return {"status": "exists", "slug": slug}
-        transcript = _get_transcript(video_id)
+        transcript, reason = transcript_or_reason(video_id)
         if not transcript:
-            return {"status": "error", "reason": "자막 없음"}
+            logger.warning(f"자막 실패 ({video_id}): {reason}")
+            return {"status": "error", "reason": reason}
         body = transcribe_to_article(transcript)
         title = item.get("title") or generate_title(transcript)
         # 미리보기의 date는 "3일 전" 같은 상대 표기라 저장용으로 못 쓴다
