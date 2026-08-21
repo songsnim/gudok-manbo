@@ -134,6 +134,34 @@ def _make_slug(video_id: str) -> str:
     return f"yt-{video_id}"
 
 
+def _video_id(entry) -> str:
+    return entry.get("yt_videoid") or re.search(r"v=([^&]+)", entry.link).group(1)
+
+
+def is_short(video_id: str) -> bool:
+    """쇼츠 여부. /shorts/<id>는 쇼츠면 200, 일반 영상이면 /watch로 리다이렉트한다."""
+    try:
+        r = httpx.head(f"https://www.youtube.com/shorts/{video_id}",
+                       headers=_HEADERS, timeout=10, follow_redirects=False)
+        return r.status_code == 200
+    except Exception:
+        return False  # 판별 실패는 일반 영상으로 취급
+
+
+def shorts_last(entries):
+    """일반 영상 먼저, 쇼츠는 맨 뒤로. 담을 게 없을 때의 최후 수단으로만 쇼츠가 쓰인다.
+
+    제너레이터라서 소비자가 limit을 채우고 멈추면 나머지는 쇼츠 판별 요청도 하지 않는다.
+    """
+    deferred = []
+    for entry in entries:
+        if is_short(_video_id(entry)):
+            deferred.append(entry)
+        else:
+            yield entry
+    yield from deferred
+
+
 def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int = 3) -> list[str]:
     """채널 RSS에서 최신 영상을 가져와 요약 후 Vault에 저장. 저장된 slug 목록 반환."""
     feed = _fetch_feed(channel_id)
@@ -143,8 +171,11 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
     log = logging.getLogger(__name__)
     log.info(f"피드 엔트리 수: {len(feed.entries)}")
 
-    for entry in recent_entries(feed.entries, limit):
-        video_id = entry.get("yt_videoid") or re.search(r"v=([^&]+)", entry.link).group(1)
+    # limit은 쇼츠 후순위 정렬 뒤에 적용해야 한다. 먼저 자르면 앞쪽 쇼츠 때문에 일반 영상을 놓친다
+    for entry in shorts_last(recent_entries(feed.entries, len(feed.entries))):
+        if len(saved) >= limit:
+            break
+        video_id = _video_id(entry)
         slug = _make_slug(video_id)
         log.info(f"처리 중: {video_id} / {entry.get('title', '')[:40]}")
 
