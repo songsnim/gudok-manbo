@@ -2,7 +2,9 @@ import json
 import re
 import feedparser
 import httpx
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from youtube_transcript_api import (
+    YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled, IpBlocked,
+)
 
 from llm.openrouter_client import transcribe_to_article, generate_title
 from scrapers.rss import entry_date
@@ -104,14 +106,28 @@ def video_published(video_id: str) -> str:
         return ""
 
 
-_yt_api = YouTubeTranscriptApi()
-
 def _get_transcript(video_id: str) -> str | None:
+    transcript, reason = transcript_or_reason(video_id)
+    if reason:
+        import logging
+        logging.getLogger(__name__).warning(f"자막 조회 실패 ({video_id}): {reason}")
+    return transcript
+
+
+def transcript_or_reason(video_id: str) -> tuple[str | None, str]:
+    """자막과 실패 이유. 짧은 시간에 많이 담으면 YouTube가 IP를 막으므로 구분해서 알린다.
+
+    인스턴스를 재사용하면 내부 requests.Session이 스레드 간 공유되므로 매번 새로 만든다.
+    """
     try:
-        transcript = _yt_api.fetch(video_id, languages=["ko", "en"])
-        return " ".join(s.text for s in transcript)
-    except Exception:
-        return None
+        transcript = YouTubeTranscriptApi().fetch(video_id, languages=["ko", "en"])
+        return " ".join(s.text for s in transcript), ""
+    except IpBlocked:
+        return None, "YouTube가 이 IP를 일시 차단했습니다. 잠시 후 다시 담아주세요"
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return None, "자막 없음"
+    except Exception as e:
+        return None, f"자막 조회 실패: {type(e).__name__}"
 
 
 def _make_slug(video_id: str) -> str:

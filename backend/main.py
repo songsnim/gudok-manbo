@@ -116,7 +116,12 @@ class AddItemIn(BaseModel):
 def add_feed_item(body: AddItemIn):
     """미리보기 아이템을 피드로 옮김 (영상=재구성, 글=원문 그대로)"""
     from scrapers.preview import add_item
-    return add_item(body.model_dump())
+    try:
+        return add_item(body.model_dump())
+    except Exception as e:
+        # 500을 그대로 던지면 앱에 "HTTP 500"만 뜨고 원인이 로그에도 안 남는다
+        logging.exception("피드 추가 실패")
+        return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
