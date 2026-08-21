@@ -1,6 +1,7 @@
 import hashlib
 import re
 import time
+from datetime import date
 from urllib.parse import urljoin
 
 import feedparser
@@ -28,6 +29,27 @@ def entry_date(entry) -> str:
         if val:
             return str(val)[:25]
     return ""
+
+
+MAX_AGE_DAYS = 30  # 수집 대상은 최근 1개월 글/영상만
+
+
+def is_recent(published: str, days: int = MAX_AGE_DAYS) -> bool:
+    """게시일(YYYY-MM-DD...)이 최근 days일 내인지. 날짜를 못 읽으면 통과시킨다."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", published or "")
+    if not m:
+        return True
+    try:
+        published_on = date(*map(int, m.groups()))
+    except ValueError:  # 2026-13-45 같은 숫자 모양의 잘못된 날짜
+        return True
+    # 상한만 본다. 피드 날짜는 UTC, today()는 서버 로컬이라 미래로 하루 튈 수 있음
+    return (date.today() - published_on).days <= days
+
+
+def recent_entries(entries, limit: int) -> list:
+    """피드 엔트리 중 최근 1개월 것만, 최대 limit개."""
+    return [e for e in entries if is_recent(entry_date(e))][:limit]
 
 
 # 원문을 그대로 보관한다. 비정상적으로 큰 페이지만 막는 상한
@@ -102,7 +124,7 @@ def scrape_feed(feed_url: str, platform: str, author: str, subscription: bool, l
     feed = feedparser.parse(feed_url)
     saved = []
 
-    for entry in feed.entries[:limit]:
+    for entry in recent_entries(feed.entries, limit):
         url = entry.get("link", "")
         if not url:
             continue

@@ -7,7 +7,7 @@ from youtube_transcript_api import (
 )
 
 from llm.openrouter_client import transcribe_to_article, generate_title
-from scrapers.rss import entry_date
+from scrapers.rss import entry_date, recent_entries
 from vault.writer import write_item
 
 
@@ -143,7 +143,7 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
     log = logging.getLogger(__name__)
     log.info(f"피드 엔트리 수: {len(feed.entries)}")
 
-    for entry in feed.entries[:limit]:
+    for entry in recent_entries(feed.entries, limit):
         video_id = entry.get("yt_videoid") or re.search(r"v=([^&]+)", entry.link).group(1)
         slug = _make_slug(video_id)
         log.info(f"처리 중: {video_id} / {entry.get('title', '')[:40]}")
