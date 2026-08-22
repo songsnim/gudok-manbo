@@ -13,7 +13,7 @@ PC (Windows, 항상 켜짐)
 │   ├── 스케줄러 (APScheduler)
 │   ├── 스크래퍼 (RSS/API + Playwright)
 │   ├── LLM (Ollama + OpenRouter)
-│   └── Obsidian Vault 기록 (Area/articles/*.md)
+│   └── Obsidian Vault 기록 (Resource/gudok-manbo/{articles,collections}/*.md)
 │
 ├── FastAPI JSON 서버
 │   └── Tailscale → 안드로이드 앱/위젯
@@ -82,7 +82,8 @@ Threads / X(Twitter) / Dev.to는 지원하지 않는다. 앞의 둘은 브라우
 
 ### 2-6. Obsidian Vault .md 구조
 
-경로: `Area/articles/<slug>.md`
+경로: `Resource/gudok-manbo/articles/<제목>-<slug>.md` (Feed)
+컬렉션에 담으면 같은 파일이 `Resource/gudok-manbo/collections/`로 이동한다 (ADR-0003).
 
 ```markdown
 ---
@@ -188,7 +189,7 @@ WorkManager (1시간 간격)
 3. 영상: 트랜스크립트 추출 → Ollama 요약
    아티클: 원문 스크래핑
 4. 제목 없으면 Ollama로 생성
-5. OG slug 생성 → Area/articles/<slug>.md 저장
+5. OG slug 생성 → Resource/gudok-manbo/articles/<제목>-<slug>.md 저장
 6. 10개 할당량 도달 시 중단
 ```
 
