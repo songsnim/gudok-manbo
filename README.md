@@ -1,4 +1,4 @@
-# Contents Curator
+# gudok-manbo
 
 개인용 콘텐츠 큐레이션 앱. 빅테크 추천 알고리즘을 벗어나, 직접 선택한 소스와 AI 에이전트가 자율 탐색한 소스에서만 콘텐츠를 수집·요약해 매일 읽는다.
 
@@ -33,7 +33,7 @@ cd backend
 .\register_autostart.ps1                      # (선택) 로그온 시 자동 실행 등록
 ```
 
-- 출력된 `https://xxxx.trycloudflare.com/` 주소를 **폰 앱 [구독] 탭 > 설정(톱니) > "서버 주소"** 에 입력하면 끝(앱 재빌드 불필요).
+- 출력된 `https://xxxx.trycloudflare.com/` 주소를 **폰 앱 [구독] 탭 &gt; 설정(톱니) &gt; "서버 주소"** 에 입력하면 끝(앱 재빌드 불필요).
 - ⚠️ quick tunnel 주소는 PC/터널 재시작 시 바뀐다. 바뀌면 새 주소를 앱 설정에 다시 입력.
 - ⚠️ 슬립 중에는 백엔드도 멈춘다 → 원격 접속은 PC가 깨어 있을 때만 가능(필요하면 전원 설정에서 슬립 끄기).
 
@@ -73,12 +73,15 @@ cd android
 
 레포 **Settings → Secrets and variables → Actions** 에 등록:
 
-| Secret | 설명 |
-|---|---|
-| `KEYSTORE_BASE64` | release 키스토어(`.jks`)를 base64 인코딩한 값 |
-| `KEYSTORE_PASSWORD` | 키스토어 비밀번호 |
-| `KEY_ALIAS` | 키 별칭 (예: `curator`) |
-| `KEY_PASSWORD` | 키 비밀번호 |
-| `API_BASE_URL` | 앱이 접속할 백엔드 주소 (예: `http://192.168.x.x:8000/`) |
+
+| Secret              | 설명                                            |
+| ------------------- | --------------------------------------------- |
+| `KEYSTORE_BASE64`   | release 키스토어(`.jks`)를 base64 인코딩한 값           |
+| `KEYSTORE_PASSWORD` | 키스토어 비밀번호                                     |
+| `KEY_ALIAS`         | 키 별칭 (예: `curator`)                           |
+| `KEY_PASSWORD`      | 키 비밀번호                                        |
+| `API_BASE_URL`      | 앱이 접속할 백엔드 주소 (예: `http://192.168.x.x:8000/`) |
+
 
 > 키스토어와 비밀번호는 절대 커밋하지 말 것. 키를 잃어버리면 같은 앱으로 업데이트할 수 없으니 안전하게 보관한다.
+

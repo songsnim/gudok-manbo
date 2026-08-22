@@ -70,13 +70,19 @@ def update_subscription(sub_id: str, fields: dict) -> dict | None:
     return None
 
 
-def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, count: int | None = None) -> int:
-    """구독 소스에서 최신글 수집. 수집된 아이템 수 반환.
+def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, count: int | None = None) -> dict:
+    """구독 소스에서 최신글 수집.
+
+    반환: {"collected": 개수, "slugs": [...], "failures": [{"author","reason"}, ...]}
+    실패 목록은 실행 로그(run_log)와 통계에서 "왜 이 채널은 안 들어왔지"에 답하기 위한 것이다.
 
     count 지정         : 이번 실행에서 새 아이템을 그 개수만큼만 수집(할당량 무시).
     respect_quota=True : 스케줄 자동수집 — 일일 할당량까지만.
     respect_quota=False: 수동 실행 — 할당량 무시, 모든 구독에서 최신글 수집.
     """
+    all_slugs: list[str] = []
+    failures: list[dict] = []
+
     if count is not None:
         remaining = count  # 이번 실행 목표치
     elif respect_quota:
@@ -85,7 +91,7 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
         remaining = quota - count_today()
         if remaining <= 0:
             logger.info("오늘 할당량 달성, 수집 건너뜀")
-            return 0
+            return {"collected": 0, "slugs": [], "failures": []}
     else:
         remaining = None  # 무제한
 
@@ -153,9 +159,11 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
                 continue
 
             collected += len(slugs)
+            all_slugs.extend(slugs)
             logger.info(f"{author}: {len(slugs)}개 수집")
 
         except Exception as e:
             logger.error(f"{author} 수집 실패: {e}")
+            failures.append({"author": author, "reason": f"{type(e).__name__}: {e}"})
 
-    return collected
+    return {"collected": collected, "slugs": all_slugs, "failures": failures}

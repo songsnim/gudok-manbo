@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.SmartToy
@@ -18,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.contentscurator.ui.agent.AgentScreen
+import com.contentscurator.ui.collection.CollectionScreen
 import com.contentscurator.ui.feed.FeedScreen
 import com.contentscurator.ui.subscriptions.SubscriptionsScreen
 import com.contentscurator.ui.theme.ContentsCuratorTheme
@@ -27,6 +29,7 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
     Feed("feed", "피드", Icons.Default.Home),
     Subscriptions("subscriptions", "구독", Icons.Default.List),
     Agent("agent", "에이전트", Icons.Default.SmartToy),
+    Collection("collection", "컬렉션", Icons.Default.Bookmarks),
 }
 
 class MainActivity : ComponentActivity() {
@@ -76,6 +79,7 @@ private fun MainNav() {
             composable(Tab.Feed.route) { FeedScreen() }
             composable(Tab.Subscriptions.route) { SubscriptionsScreen() }
             composable(Tab.Agent.route) { AgentScreen() }
+            composable(Tab.Collection.route) { CollectionScreen() }
         }
     }
 }
