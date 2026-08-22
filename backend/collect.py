@@ -10,6 +10,7 @@ FastAPI 서버와 분리되어 있어 서버 상태와 무관하게 수집이 �
 import ctypes
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Windows SetThreadExecutionState 플래그 — 작업 동안 시스템 슬립 차단
@@ -39,20 +40,59 @@ def _allow_sleep() -> None:
     ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
 
 
+def _target_count(cfg: dict) -> int | None:
+    """이번 실행에서 수집할 개수. 인자로 주면 그 값, 없으면 설정의 시각별 개수.
+
+    시각(트리거)은 register_tasks.ps1이, 개수는 앱이 정한다 — 개수만 앱에서 편집 가능.
+    """
+    if len(sys.argv) > 1:
+        return int(sys.argv[1])
+    schedule = cfg.get("schedule") or {}
+    hour = str(datetime.now().hour)
+    value = schedule.get(hour)
+    return int(value) if value is not None else None  # 없으면 일일 할당량 로직으로
+
+
 def main() -> None:
     _setup_logging()
     log = logging.getLogger("collect")
-    # 인자로 이번 실행에서 수집할 개수를 받는다 (예: collect.py 10). 없으면 일일 할당량.
-    count = int(sys.argv[1]) if len(sys.argv) > 1 else None
+
+    from app_settings import load_app_settings
+    from run_log import append_run
+    cfg = load_app_settings()
+
+    # 스위치를 끄면 아무 일도 일어나지 않는다 — 수집도, 만료 삭제도.
+    if not cfg.get("auto_collect", True):
+        log.info("자동 수집 꺼짐 (auto_collect=false) — 수집·만료 모두 건너뜀")
+        append_run(target=None, collected=0, trigger="skipped")
+        return
+
+    count = _target_count(cfg)
     _prevent_sleep()
     log.info(f"수집 시작 (슬립 차단, 목표 {count if count is not None else '할당량'}개)")
+    result, expired, error = {"collected": 0, "slugs": [], "failures": []}, [], ""
     try:
         from agent.curator import run_scheduled_collection
-        n = run_scheduled_collection(count=count)
-        log.info(f"수집 완료: {n}개")
-    except Exception:
+        result = run_scheduled_collection(count=count)
+        log.info(f"수집 완료: {result['collected']}개")
+
+        # 만료 정리는 수집 뒤에. expire_days=0(기본)이면 아무것도 지우지 않는다.
+        from vault.writer import expire_feed_items
+        expired = expire_feed_items(int(cfg.get("expire_days", 0)))
+        if expired:
+            log.info(f"만료 삭제: {len(expired)}개")
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
         log.exception("수집 중 오류")
     finally:
+        append_run(
+            target=count,
+            collected=result["collected"],
+            slugs=result["slugs"],
+            failures=result["failures"],
+            expired=expired,
+            error=error,
+        )
         _allow_sleep()
         log.info("종료 (슬립 허용)")
 

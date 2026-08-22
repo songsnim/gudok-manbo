@@ -186,11 +186,11 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadSettings() = viewModelScope.launch {
-        runCatching { _dailyQuota.value = repo.getSettings().daily_quota }
+        runCatching { repo.getSettings().daily_quota?.let { _dailyQuota.value = it } }
     }
 
     fun saveQuota(n: Int) = viewModelScope.launch {
-        runCatching { _dailyQuota.value = repo.updateSettings(n).daily_quota }
+        runCatching { repo.updateSettings(dailyQuota = n).daily_quota?.let { _dailyQuota.value = it } }
             .onSuccess { _toast.value = "일일 할당량: ${_dailyQuota.value}개" }
     }
 

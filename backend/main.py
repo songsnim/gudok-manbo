@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from vault.reader import get_all_items, get_today_items, get_item
+from vault.reader import get_all_items, get_today_items, get_item, get_collection_items
 from agent.curator import load_subscriptions, add_subscription, remove_subscription, enrich_avatars
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -41,6 +41,29 @@ def feed_item(slug: str):
 @app.delete("/feed/items/{slug}", status_code=204)
 def delete_feed_item(slug: str):
     """피드(Vault)에서 아이템 삭제 — 삭제 후 같은 영상을 다시 담을 수 있음"""
+    from vault.writer import delete_item
+    if not delete_item(slug):
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없음")
+
+
+# ── Collections ───────────────────────────────────────────────────────────────
+
+@app.get("/collections")
+def list_collections():
+    return get_collection_items()
+
+
+@app.post("/collections/{slug}", status_code=204)
+def collect_item(slug: str):
+    """Feed(articles/) → Collection(collections/) 파일 이동. 되돌릴 수 없다."""
+    from vault.writer import move_to_collection
+    if not move_to_collection(slug):
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없음")
+
+
+@app.delete("/collections/{slug}", status_code=204)
+def delete_collection_item(slug: str):
+    """Collection에서 제거 = 완전 삭제. Feed로 되돌리지 않는다."""
     from vault.writer import delete_item
     if not delete_item(slug):
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없음")
@@ -128,10 +151,18 @@ def add_feed_item(body: AddItemIn):
 
 @app.post("/agent/collect")
 def trigger_collect():
-    """수동 수집 — 할당량 무시, 모든 구독에서 최신글 수집"""
+    """수동 수집 — 할당량 무시, 모든 구독에서 최신글 수집. 만료 정리는 하지 않는다."""
     from agent.curator import run_scheduled_collection
-    n = run_scheduled_collection(respect_quota=False)
-    return {"collected": n}
+    from run_log import append_run
+    result = run_scheduled_collection(respect_quota=False)
+    append_run(
+        target=None,
+        collected=result["collected"],
+        slugs=result["slugs"],
+        failures=result["failures"],
+        trigger="manual",
+    )
+    return {"collected": result["collected"]}
 
 
 class DiscoverIn(BaseModel):
@@ -165,6 +196,9 @@ def search_videos(q: str):
 
 class SettingsIn(BaseModel):
     daily_quota: Optional[int] = None
+    auto_collect: Optional[bool] = None
+    schedule: Optional[dict[str, int]] = None
+    expire_days: Optional[int] = None
 
 
 @app.get("/settings")
@@ -177,3 +211,36 @@ def get_settings():
 def put_settings(body: SettingsIn):
     from app_settings import save_app_settings
     return save_app_settings(body.model_dump())
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+
+@app.get("/stats")
+def stats(days: int = 30):
+    """수집 통계. 성공분은 Vault frontmatter에서, 실패·만료는 실행 로그에서 온다."""
+    from collections import Counter
+    from datetime import date, timedelta
+    from run_log import recent_runs
+
+    items = get_all_items() + get_collection_items()
+    cutoff = str(date.today() - timedelta(days=days))
+    recent = [i for i in items if i["date"] >= cutoff]
+
+    return {
+        "total_feed": len(get_all_items()),
+        "total_collection": len(get_collection_items()),
+        # 최근 days일의 날짜별 수집 개수 (최신 날짜부터)
+        "by_date": [
+            {"date": d, "count": n}
+            for d, n in sorted(Counter(i["date"] for i in recent).items(), reverse=True)
+        ],
+        "by_author": [
+            {"author": a, "count": n}
+            for a, n in Counter(i["author"] for i in recent if i["author"]).most_common(10)
+        ],
+        "by_platform": [
+            {"platform": p, "count": n}
+            for p, n in Counter(i["platform"] for i in recent if i["platform"]).most_common()
+        ],
+        "recent_runs": recent_runs(10),
+    }

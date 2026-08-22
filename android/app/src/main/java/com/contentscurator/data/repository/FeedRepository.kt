@@ -12,6 +12,7 @@ import com.contentscurator.data.api.PreviewResponse
 import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.api.SearchResult
 import com.contentscurator.data.api.Subscription
+import com.contentscurator.data.api.Stats
 import com.contentscurator.data.api.SubscriptionRequest
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.db.ReadStatusEntity
@@ -36,10 +37,27 @@ class FeedRepository(private val db: AppDatabase) {
 
     suspend fun deleteFeedItem(slug: String) = RetrofitClient.api.deleteFeedItem(slug)
 
+    suspend fun getCollections(): List<FeedItem> = RetrofitClient.api.getCollections()
+
+    /** Feed → Collection 이동. 되돌릴 수 없다. */
+    suspend fun collectItem(slug: String) = RetrofitClient.api.collectItem(slug)
+
+    /** Collection에서 완전 삭제. */
+    suspend fun deleteCollectionItem(slug: String) = RetrofitClient.api.deleteCollectionItem(slug)
+
+    suspend fun getStats(): Stats = RetrofitClient.api.getStats()
+
     suspend fun getSettings(): AppSettings = RetrofitClient.api.getSettings()
 
-    suspend fun updateSettings(dailyQuota: Int): AppSettings =
-        RetrofitClient.api.putSettings(AppSettings(dailyQuota))
+    /** 부분 갱신 — 넘기지 않은 값은 백엔드에 그대로 남는다. */
+    suspend fun updateSettings(
+        dailyQuota: Int? = null,
+        autoCollect: Boolean? = null,
+        schedule: Map<String, Int>? = null,
+        expireDays: Int? = null,
+    ): AppSettings = RetrofitClient.api.putSettings(
+        AppSettings(dailyQuota, autoCollect, schedule, expireDays)
+    )
 
     suspend fun isRead(slug: String): Boolean = db.readStatusDao().isRead(slug)
 

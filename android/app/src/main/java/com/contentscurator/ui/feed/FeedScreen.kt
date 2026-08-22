@@ -11,7 +11,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -21,6 +23,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -51,17 +54,32 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
             item = selectedItem!!,
             onBack = { selectedItem = null },
             onDelete = { vm.delete(selectedItem!!.slug) { selectedItem = null } },
+            onCollect = { vm.collect(selectedItem!!.slug) { selectedItem = null } },
         )
         return
     }
 
     var showSearch by remember { mutableStateOf(false) }
+    var showFilter by remember { mutableStateOf(false) }
+    var sort by rememberSaveable { mutableStateOf(SortBy.COLLECTED) }
+    var period by rememberSaveable { mutableStateOf(Period.ALL) }
+    var author by rememberSaveable { mutableStateOf<String?>(null) }
+    var platform by rememberSaveable { mutableStateOf<String?>(null) }
+    val filtered = author != null || platform != null || period != Period.ALL
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("컨텐츠 피드") },
                 actions = {
+                    IconButton(onClick = { showFilter = true }) {
+                        Icon(
+                            Icons.Default.FilterList,
+                            contentDescription = "정렬·필터",
+                            tint = if (filtered || sort != SortBy.COLLECTED) MaterialTheme.colorScheme.primary
+                                   else LocalContentColor.current,
+                        )
+                    }
                     IconButton(onClick = { vm.load() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "새로고침")
                     }
@@ -84,11 +102,17 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
                     Button(onClick = { vm.load() }) { Text("재시도") }
                 }
                 is FeedUiState.Success -> {
-                    if (s.items.isEmpty()) {
-                        Text("수집된 아이템이 없습니다.", Modifier.align(Alignment.Center))
+                    val shownItems = remember(s.items, sort, author, platform, period) {
+                        sortAndFilter(s.items, sort, author, platform, period)
+                    }
+                    if (shownItems.isEmpty()) {
+                        Text(
+                            if (s.items.isEmpty()) "수집된 아이템이 없습니다." else "조건에 맞는 아이템이 없습니다.",
+                            Modifier.align(Alignment.Center),
+                        )
                     } else {
                         LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                            items(s.items, key = { it.slug }) { item ->
+                            items(shownItems, key = { it.slug }) { item ->
                                 FeedItemRow(
                                     item = item,
                                     isRead = item.slug in s.readSlugs,
@@ -109,6 +133,125 @@ fun FeedScreen(vm: FeedViewModel = viewModel()) {
     if (showSearch) {
         VideoSearchDialog(vm = vm, onDismiss = { vm.clearSearch(); showSearch = false })
     }
+
+    if (showFilter) {
+        SortFilterDialog(
+            items = (state as? FeedUiState.Success)?.items ?: emptyList(),
+            sort = sort, author = author, platform = platform, period = period,
+            onSort = { sort = it }, onAuthor = { author = it },
+            onPlatform = { platform = it }, onPeriod = { period = it },
+            onReset = { sort = SortBy.COLLECTED; author = null; platform = null; period = Period.ALL },
+            onDismiss = { showFilter = false },
+        )
+    }
+}
+
+// ── 정렬·필터 ────────────────────────────────────────────────────────────────
+
+enum class SortBy(val label: String) {
+    COLLECTED("수집순"),   // 서버가 이미 수집 시각 역순으로 준다
+    PUBLISHED("게시일순"),
+}
+
+enum class Period(val label: String, val days: Long?) {
+    ALL("전체", null), WEEK("1주", 7), MONTH("1개월", 30), QUARTER("3개월", 90),
+}
+
+private val ISO_DATE = Regex("^\\d{4}-\\d{2}-\\d{2}")
+
+/**
+ * 매체 게시일(없으면 수집일)의 YYYY-MM-DD. 기간 필터·게시일 정렬의 기준.
+ * ISO가 아니면(RFC822 원문 등) 빈 문자열 — 날짜 불명으로 취급한다.
+ */
+private fun FeedItem.dateKey(): String =
+    ISO_DATE.find(published)?.value ?: ISO_DATE.find(date)?.value ?: ""
+
+private fun sortAndFilter(
+    items: List<FeedItem>, sort: SortBy, author: String?, platform: String?, period: Period,
+): List<FeedItem> {
+    val cutoff = period.days?.let { java.time.LocalDate.now().minusDays(it).toString() }
+    val kept = items.filter { item ->
+        (author == null || item.author == author) &&
+        (platform == null || item.platform.equals(platform, ignoreCase = true)) &&
+        // 날짜를 못 읽는 아이템은 기간 필터에서 빼지 않는다
+        (cutoff == null || item.dateKey().isEmpty() || item.dateKey() >= cutoff)
+    }
+    // 날짜 불명("")은 게시일순에서 맨 아래로
+    return if (sort == SortBy.PUBLISHED) kept.sortedByDescending { it.dateKey() } else kept
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SortFilterDialog(
+    items: List<FeedItem>,
+    sort: SortBy, author: String?, platform: String?, period: Period,
+    onSort: (SortBy) -> Unit, onAuthor: (String?) -> Unit,
+    onPlatform: (String?) -> Unit, onPeriod: (Period) -> Unit,
+    onReset: () -> Unit, onDismiss: () -> Unit,
+) {
+    // 비교가 대소문자 무시라 목록도 맞춘다 — youtube/YouTube가 칩 두 개로 갈리지 않게
+    val platforms = remember(items) {
+        items.map { it.platform }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sorted()
+    }
+    val authors = remember(items) { items.map { it.author }.filter { it.isNotBlank() }.distinct().sorted() }
+
+    AlertDialog(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss,
+        title = { Text("정렬·필터") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState())
+            ) {
+                FilterSection("정렬") {
+                    SortBy.entries.forEach { option ->
+                        FilterChip(
+                            selected = sort == option,
+                            onClick = { onSort(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                FilterSection("기간") {
+                    Period.entries.forEach { option ->
+                        FilterChip(
+                            selected = period == option,
+                            onClick = { onPeriod(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                FilterSection("플랫폼") {
+                    FilterChip(platform == null, { onPlatform(null) }, { Text("전체") })
+                    platforms.forEach { p ->
+                        FilterChip(platform == p, { onPlatform(p) }, { Text(p) })
+                    }
+                }
+                FilterSection("채널") {
+                    FilterChip(author == null, { onAuthor(null) }, { Text("전체") })
+                    authors.forEach { a ->
+                        FilterChip(author == a, { onAuthor(a) }, { Text(a) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = onReset) { Text("초기화") } },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterSection(title: String, content: @Composable FlowRowScope.() -> Unit) {
+    Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        content = content,
+    )
 }
 
 // ── 영상 검색 Dialog ──────────────────────────────────────────────────────────
@@ -178,8 +321,9 @@ private fun thumbnailUrl(item: FeedItem): String? {
     return "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 }
 
+/** 피드·컬렉션이 공유하는 목록 행. */
 @Composable
-private fun FeedItemRow(item: FeedItem, isRead: Boolean, avatarUrl: String?, onClick: () -> Unit) {
+fun FeedItemRow(item: FeedItem, isRead: Boolean, avatarUrl: String?, onClick: () -> Unit) {
     val alpha = if (isRead) 0.45f else 1f
     Row(
         modifier = Modifier
@@ -244,10 +388,24 @@ private fun FeedItemRow(item: FeedItem, isRead: Boolean, avatarUrl: String?, onC
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 }
 
+/**
+ * Feed와 컬렉션이 공유하는 상세 화면.
+ *
+ * onCollect가 null이면 컬렉션 담기 아이콘을 그리지 않는다 — 컬렉션 탭에서는 이미 담긴 글이다.
+ * deleteMessage는 삭제 확인 문구: Feed는 "다시 담을 수 있다", 컬렉션은 완전 삭제다.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ItemDetailScreen(item: FeedItem, onBack: () -> Unit, onDelete: () -> Unit) {
+fun ItemDetailScreen(
+    item: FeedItem,
+    onBack: () -> Unit,
+    onDelete: () -> Unit,
+    onCollect: (() -> Unit)? = null,
+    deleteTitle: String = "피드에서 삭제",
+    deleteMessage: String = "이 글을 피드에서 삭제할까요?\n구독 채널에서 다시 담을 수 있습니다.",
+) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmCollect by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val openSource = {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.source_url)))
@@ -256,20 +414,29 @@ fun ItemDetailScreen(item: FeedItem, onBack: () -> Unit, onDelete: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        lineHeight = 18.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
                     }
                 },
                 actions = {
-                    if (item.source_url.startsWith("http")) {
-                        IconButton(onClick = openSource) {
-                            Icon(Icons.Default.OpenInNew, contentDescription = "원문 보기")
+                    // 원문 링크는 본문 하단에 그대로 있다 — 여기 자리는 컬렉션에 넘겼다
+                    if (onCollect != null) {
+                        IconButton(onClick = { confirmCollect = true }) {
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = "컬렉션에 담기")
                         }
                     }
                     IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "피드에서 삭제")
+                        Icon(Icons.Default.Delete, contentDescription = deleteTitle)
                     }
                 }
             )
@@ -317,12 +484,24 @@ fun ItemDetailScreen(item: FeedItem, onBack: () -> Unit, onDelete: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("피드에서 삭제") },
-            text = { Text("이 글을 피드에서 삭제할까요?\n구독 채널에서 다시 담을 수 있습니다.") },
+            title = { Text(deleteTitle) },
+            text = { Text(deleteMessage) },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("삭제") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소") } }
+        )
+    }
+
+    if (confirmCollect && onCollect != null) {
+        AlertDialog(
+            onDismissRequest = { confirmCollect = false },
+            title = { Text("컬렉션에 담기") },
+            text = { Text("이 글을 컬렉션으로 옮길까요?\n피드에서는 사라지고 만료로 삭제되지 않습니다. 되돌릴 수 없습니다.") },
+            confirmButton = {
+                TextButton(onClick = { confirmCollect = false; onCollect() }) { Text("담기") }
+            },
+            dismissButton = { TextButton(onClick = { confirmCollect = false }) { Text("취소") } }
         )
     }
 }

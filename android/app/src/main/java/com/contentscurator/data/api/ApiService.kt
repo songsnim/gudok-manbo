@@ -42,8 +42,17 @@ data class SubscriptionRequest(
 @JsonClass(generateAdapter = true)
 data class SubscriptionPatch(val priority: Int)
 
+/**
+ * 백엔드 app_settings.json. PUT은 부분 갱신 — null 필드는 Moshi가 생략하고
+ * 백엔드도 None을 무시하므로, 바꿀 값만 채워 보내면 나머지는 그대로 남는다.
+ */
 @JsonClass(generateAdapter = true)
-data class AppSettings(val daily_quota: Int)
+data class AppSettings(
+    val daily_quota: Int? = null,
+    val auto_collect: Boolean? = null,
+    val schedule: Map<String, Int>? = null,
+    val expire_days: Int? = null,
+)
 
 @JsonClass(generateAdapter = true)
 data class DiscoverRequest(val query: String)
@@ -86,6 +95,20 @@ interface ApiService {
 
     @DELETE("feed/items/{slug}")
     suspend fun deleteFeedItem(@Path("slug") slug: String)
+
+    @GET("collections")
+    suspend fun getCollections(): List<FeedItem>
+
+    /** Feed → Collection 파일 이동. 되돌릴 수 없다. */
+    @POST("collections/{slug}")
+    suspend fun collectItem(@Path("slug") slug: String)
+
+    /** Collection에서 제거 = 완전 삭제. */
+    @DELETE("collections/{slug}")
+    suspend fun deleteCollectionItem(@Path("slug") slug: String)
+
+    @GET("stats")
+    suspend fun getStats(): Stats
 
     @GET("settings")
     suspend fun getSettings(): AppSettings
@@ -158,6 +181,42 @@ data class AddItemRequest(
     val video_id: String?,
     val body: String = "",
     val feed_url: String = "",
+)
+
+// ── 통계 ──────────────────────────────────────────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class DateCount(val date: String, val count: Int)
+
+@JsonClass(generateAdapter = true)
+data class AuthorCount(val author: String, val count: Int)
+
+@JsonClass(generateAdapter = true)
+data class PlatformCount(val platform: String, val count: Int)
+
+@JsonClass(generateAdapter = true)
+data class RunFailure(val author: String = "", val reason: String = "")
+
+@JsonClass(generateAdapter = true)
+data class CollectRun(
+    val at: String,
+    val trigger: String,          // schedule | manual | skipped
+    val target: Int? = null,
+    val collected: Int = 0,
+    val slugs: List<String> = emptyList(),
+    val failures: List<RunFailure> = emptyList(),
+    val expired: List<String> = emptyList(),
+    val error: String = "",
+)
+
+@JsonClass(generateAdapter = true)
+data class Stats(
+    val total_feed: Int = 0,
+    val total_collection: Int = 0,
+    val by_date: List<DateCount> = emptyList(),
+    val by_author: List<AuthorCount> = emptyList(),
+    val by_platform: List<PlatformCount> = emptyList(),
+    val recent_runs: List<CollectRun> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

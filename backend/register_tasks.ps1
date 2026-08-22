@@ -15,12 +15,13 @@ $Python  = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $Python) { throw "python을 PATH에서 찾을 수 없습니다. Python 설치 후 다시 실행하세요." }
 $Script  = "collect.py"
 
-# 시각별 수집 개수 (한국시간 = PC 로컬시간 기준). 시각마다 별도 작업으로 등록한다.
-$Schedule = @(
-    @{ Hour = 6;  Count = 10 },
-    @{ Hour = 11; Count = 5  },
-    @{ Hour = 17; Count = 10 }
-)
+# 수집 시각 (한국시간 = PC 로컬시간 기준). 시각마다 별도 작업으로 등록한다.
+#
+# 이 스크립트는 "언제 깨울지"만 정한다. "몇 개 수집할지"는 앱(에이전트 탭)이
+# data\app_settings.json 의 schedule 에 쓰고 collect.py 가 현재 시각으로 조회한다.
+# 그래서 개수를 인자로 넘기지 않는다 — 넘기면 앱 설정을 덮어쓴다.
+# 시각을 추가·삭제하려면 여기를 고치고 app_settings.json 의 schedule 키도 맞춘 뒤 재실행한다.
+$Hours = @(6, 11, 17)
 
 # ── 1. wake timer 허용 (전원 plan) ───────────────────────────────────────────
 # SUB_SLEEP / "절전 모드 해제 타이머 허용" 설정 GUID = bd3b718a-... , 값 1 = 사용
@@ -35,7 +36,8 @@ Write-Host "[1/3] wake timer 허용 완료 (AC/배터리 모두)"
 Unregister-ScheduledTask -TaskName "ContentsCurator-Collect" -Confirm:$false -ErrorAction SilentlyContinue
 
 # ── 3. 시각별 작업 등록 ──────────────────────────────────────────────────────
-# 06시 10개 / 11시 5개 / 17시 10개 (한국시간). 시각마다 별도 작업으로 wake timer 무장.
+# 06 / 11 / 17시 (한국시간). 시각마다 별도 작업으로 wake timer 무장.
+# 개수는 앱 설정에서 읽으므로 인자로 넘기지 않는다.
 $settings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
@@ -44,20 +46,19 @@ $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
     -MultipleInstances IgnoreNew
 
-foreach ($job in $Schedule) {
-    $h = $job.Hour; $c = $job.Count
+foreach ($h in $Hours) {
     $taskName = "ContentsCurator-Collect-{0:D2}00" -f $h
     $trigger  = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($h))
-    $action   = New-ScheduledTaskAction -Execute $Python -Argument "$Script $c" -WorkingDirectory $WorkDir
+    $action   = New-ScheduledTaskAction -Execute $Python -Argument $Script -WorkingDirectory $WorkDir
 
     Register-ScheduledTask `
         -TaskName $taskName `
         -Trigger $trigger `
         -Action $action `
         -Settings $settings `
-        -Description "구독 소스에서 컨텐츠 $c개 수집 (PC를 깨워 백그라운드 실행)" `
+        -Description "구독 소스에서 컨텐츠 수집 (개수는 앱 설정에서 읽음, PC를 깨워 백그라운드 실행)" `
         -Force | Out-Null
-    Write-Host ("[2/3] 등록: {0} — 매일 {1:D2}:00, {2}개" -f $taskName, $h, $c)
+    Write-Host ("[2/3] 등록: {0} — 매일 {1:D2}:00 (개수는 app_settings.json)" -f $taskName, $h)
 }
 
 # ── 검증 ─────────────────────────────────────────────────────────────────────

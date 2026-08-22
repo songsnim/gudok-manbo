@@ -96,6 +96,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Feed → Collection 이동. 성공하면 피드 목록에서 사라진다. */
+    fun collect(slug: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            val ok = runCatching { repo.collectItem(slug) }.isSuccess
+            val current = _uiState.value
+            if (ok && current is FeedUiState.Success) {
+                _uiState.value = current.copy(items = current.items.filterNot { it.slug == slug })
+            }
+            onDone()
+        }
+    }
+
     fun delete(slug: String, onDone: () -> Unit) {
         viewModelScope.launch {
             runCatching { repo.deleteFeedItem(slug) }

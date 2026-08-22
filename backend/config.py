@@ -13,8 +13,19 @@ class Settings(BaseSettings):
     daily_quota: int = 10
 
     @property
+    def data_root(self) -> Path:
+        """Vault 안에서 이 앱이 쓰는 유일한 폴더. 경로 리터럴은 여기 한 곳에만 둔다."""
+        return self.vault_path / "Resource" / "gudok-manbo"
+
+    @property
     def articles_path(self) -> Path:
-        return self.vault_path / "Area" / "articles"
+        """Feed — 아직 처리하지 않은 Item. 만료 대상."""
+        return self.data_root / "articles"
+
+    @property
+    def collections_path(self) -> Path:
+        """Collection — 사용자가 남기기로 선택한 Item. 만료되지 않는다."""
+        return self.data_root / "collections"
 
     @property
     def model_chain(self) -> list[str]:
