@@ -60,6 +60,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val addingUrls: StateFlow<Set<String>> = _addingUrls
     private val _addedUrls = MutableStateFlow<Set<String>>(emptySet())
     val addedUrls: StateFlow<Set<String>> = _addedUrls
+    /** 담기 실패 사유. 백엔드는 실패도 200 + status=error로 주므로 여기서 꺼내 보여준다. */
+    private val _addMessage = MutableStateFlow<String?>(null)
+    val addMessage: StateFlow<String?> = _addMessage
 
     fun searchVideos(query: String) {
         if (query.isBlank()) return
@@ -72,17 +75,25 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSearch() {
         _searchResults.value = emptyList()
+        _addMessage.value = null
     }
 
     fun addToFeed(item: PreviewItem) {
         viewModelScope.launch {
             _addingUrls.value += item.source_url
-            val result = runCatching { repo.addToFeed(item) }.getOrNull()
+            runCatching { repo.addToFeed(item) }
+                .onSuccess { result ->
+                    when (result.status) {
+                        "added", "exists" -> {
+                            _addMessage.value = null
+                            _addedUrls.value += item.source_url
+                            load()
+                        }
+                        else -> _addMessage.value = result.reason ?: "담기 실패"
+                    }
+                }
+                .onFailure { _addMessage.value = "담기 실패: ${it.message}" }
             _addingUrls.value -= item.source_url
-            if (result?.status == "added" || result?.status == "exists") {
-                _addedUrls.value += item.source_url
-                load()
-            }
         }
     }
 

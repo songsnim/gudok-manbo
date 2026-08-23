@@ -262,6 +262,7 @@ private fun VideoSearchDialog(vm: FeedViewModel, onDismiss: () -> Unit) {
     val loading by vm.searchLoading.collectAsStateWithLifecycle()
     val addingUrls by vm.addingUrls.collectAsStateWithLifecycle()
     val addedUrls by vm.addedUrls.collectAsStateWithLifecycle()
+    val addMessage by vm.addMessage.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -289,6 +290,11 @@ private fun VideoSearchDialog(vm: FeedViewModel, onDismiss: () -> Unit) {
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { vm.searchVideos(query) }),
                 )
+                // Snackbar는 다이얼로그 스크림 뒤로 깔린다 — 사유는 보고 있는 자리에 띄운다
+                addMessage?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn {
                     items(results, key = { it.source_url }) { item ->

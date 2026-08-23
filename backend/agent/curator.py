@@ -4,7 +4,7 @@ from pathlib import Path
 
 from config import settings
 from vault.reader import count_today
-from scrapers.youtube import scrape_channel
+from scrapers.youtube import IpBlockedError, scrape_channel
 from scrapers.rss import scrape_feed
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,10 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
     collected = 0
     # 우선순위 높은 순(작은 숫자)으로 정렬 — 상위 채널부터 할당량 채움
     subs = sorted(load_subscriptions(), key=lambda s: s.get("priority", 2))
+    # 자막 IP 차단은 채널별 사정이 아니라 실행 전체의 사정이다. 한 번 걸리면 남은
+    # YouTube 채널은 열지 않는다 — 열어봐야 채널당 RSS 1 + 쇼츠 판별 최대 15회를
+    # 막힌 IP로 더 쏘고 0개를 담는다. 다른 플랫폼은 영향 없으므로 계속 돈다.
+    yt_blocked = ""
 
     for sub in subs:
         if remaining is not None and collected >= remaining:
@@ -106,6 +110,10 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
         limit = per_source if remaining is None else min(per_source, remaining - collected)
         platform = sub.get("platform", "")
         author = sub.get("author", "")
+
+        if platform == "youtube" and yt_blocked:
+            failures.append({"author": author, "reason": yt_blocked})
+            continue
 
         try:
             if platform == "youtube":
@@ -161,6 +169,11 @@ def run_scheduled_collection(respect_quota: bool = True, per_source: int = 3, co
             collected += len(slugs)
             all_slugs.extend(slugs)
             logger.info(f"{author}: {len(slugs)}개 수집")
+
+        except IpBlockedError as e:
+            yt_blocked = str(e)
+            logger.error(f"YouTube 자막 IP 차단 — 남은 YouTube 채널 건너뜀 ({author})")
+            failures.append({"author": author, "reason": yt_blocked})
 
         except Exception as e:
             logger.error(f"{author} 수집 실패: {e}")
