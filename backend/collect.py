@@ -61,26 +61,30 @@ def main() -> None:
     from run_log import append_run
     cfg = load_app_settings()
 
-    # 스위치를 끄면 아무 일도 일어나지 않는다 — 수집도, 만료 삭제도.
+    # 만료는 auto_collect와 독립 — expire_days 하나로만 켜고 끈다(0 = 만료 안 함).
+    expired, error = [], ""
+    try:
+        from vault.writer import expire_feed_items
+        expired = expire_feed_items(int(cfg.get("expire_days", 0)))
+        if expired:
+            log.info(f"만료 삭제: {len(expired)}개")
+    except Exception as e:
+        error = f"만료 정리 실패 — {type(e).__name__}: {e}"
+        log.exception("만료 정리 중 오류")
+
     if not cfg.get("auto_collect", True):
-        log.info("자동 수집 꺼짐 (auto_collect=false) — 수집·만료 모두 건너뜀")
-        append_run(target=None, collected=0, trigger="skipped")
+        log.info("자동 수집 꺼짐 (auto_collect=false) — 수집 건너뜀")
+        append_run(target=None, collected=0, trigger="skipped", expired=expired, error=error)
         return
 
     count = _target_count(cfg)
     _prevent_sleep()
     log.info(f"수집 시작 (슬립 차단, 목표 {count if count is not None else '할당량'}개)")
-    result, expired, error = {"collected": 0, "slugs": [], "failures": []}, [], ""
+    result = {"collected": 0, "slugs": [], "failures": []}
     try:
         from agent.curator import run_scheduled_collection
         result = run_scheduled_collection(count=count)
         log.info(f"수집 완료: {result['collected']}개")
-
-        # 만료 정리는 수집 뒤에. expire_days=0(기본)이면 아무것도 지우지 않는다.
-        from vault.writer import expire_feed_items
-        expired = expire_feed_items(int(cfg.get("expire_days", 0)))
-        if expired:
-            log.info(f"만료 삭제: {len(expired)}개")
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
         log.exception("수집 중 오류")

@@ -281,8 +281,8 @@ private fun ScheduleSettingsSection(settings: AppSettings?, onSave: (Boolean?, M
         Column(Modifier.weight(1f)) {
             Text("자동 수집", style = MaterialTheme.typography.bodyMedium)
             Text(
-                if (autoCollect) "정해진 시각에 수집하고 만료 정리를 한다"
-                else "꺼짐 — 수집도 만료 삭제도 하지 않는다",
+                if (autoCollect) "정해진 시각에 수집한다"
+                else "꺼짐 — 수집하지 않는다 (만료는 아래 설정대로 진행)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
             )
