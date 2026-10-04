@@ -75,8 +75,9 @@ interface ApiService {
     @GET("feed/today")
     suspend fun getTodayFeed(): List<FeedItem>
 
+    /** lite=true면 body가 빈 문자열 — 위젯용 목록. */
     @GET("feed/items")
-    suspend fun getAllItems(): List<FeedItem>
+    suspend fun getAllItems(@Query("lite") lite: Boolean? = null): List<FeedItem>
 
     @GET("feed/items/{slug}")
     suspend fun getItem(@Path("slug") slug: String): FeedItem

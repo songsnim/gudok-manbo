@@ -1,149 +1,307 @@
 package com.contentscurator.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.compose.ui.unit.sp
 import androidx.glance.*
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.*
-import androidx.glance.appwidget.lazy.LazyColumn
-import androidx.glance.appwidget.lazy.items
-import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.layout.*
-import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.contentscurator.MainActivity
+import com.contentscurator.R
+import com.contentscurator.data.ServerResolver
+import com.contentscurator.data.api.RetrofitClient
+import com.contentscurator.data.db.AppDatabase
+import com.contentscurator.ui.feed.thumbnailUrl
+import com.contentscurator.ui.subscriptions.platformColor
+import com.contentscurator.ui.subscriptions.platformLetter
+import com.contentscurator.ui.theme.Background
+import com.contentscurator.ui.theme.OnBackground
+import com.contentscurator.ui.theme.Outline
+import com.contentscurator.ui.theme.Primary
+import com.contentscurator.ui.theme.Surface
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.URL
+import java.time.LocalTime
 
-private val KEY_ITEMS = stringPreferencesKey("widget_items")
+// 인앱 FeedItemRow와 같은 값. 앱이 다크 고정이라 위젯도 day/night 분기 없음.
+private val DATE = Color(0xFFCAC4D0)      // M3 다크 onSurfaceVariant (인앱 날짜 줄)
+private val DIVIDER = Color(0xFF36383B)   // outline 30% over background (인앱 디바이더)
+
+private const val MAX_ROWS = 5
+// ponytail: 읽고 나면 아래 행이 올라오므로 5개보다 넉넉히 받아 둔다. 그 너머는 다음 동기화까지 대체 블록.
+private const val THUMB_PREFETCH = 10
+
+/** 위젯 행 탭 → MainActivity가 이 extra로 본문을 연다. */
+val SlugParam = ActionParameters.Key<String>(MainActivity.EXTRA_SLUG)
 
 class FeedWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget = FeedWidget()
 }
 
+/**
+ * 실제 화면 dp → 위젯 dp. One UI는 큰 위젯을 보고된 크기로 그린 뒤 hsResizeRatio(5×6에서 ≈0.71)로
+ * 축소해 보여준다. 그대로 두면 인앱보다 30% 작게 보이므로 모든 치수를 1/ratio 배 한다.
+ */
+private class Scale(val ratio: Float) {
+    fun d(v: Float): Dp = (v / ratio).dp
+    fun t(v: Float): TextUnit = (v / ratio).sp
+}
+
 class FeedWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent { WidgetContent() }
+        // ponytail: 비율은 세션 시작 때 한 번 읽는다. 런처 그리드를 바꾸면 다음 세션부터 반영.
+        val options = AppWidgetManager.getInstance(context)
+            .getAppWidgetOptions(GlanceAppWidgetManager(context).getAppWidgetId(id))
+        val ratio = (options.get("hsResizeRatio") as? Number)?.toFloat()?.takeIf { it in 0.3f..1f } ?: 1f
+        provideContent {
+            // 세션이 살아 있는 동안 update()는 provideGlance를 다시 부르지 않고 재구성만 한다.
+            // 그래서 데이터는 재구성 안에서, notifyWidget이 올리는 버전이 바뀔 때마다 다시 읽는다.
+            val version = currentState(KEY_VERSION) ?: 0L
+            val data by produceState<WidgetData?>(null, version) { value = loadWidgetData(context) }
+            data?.let { WidgetContent(it.items, it.unread, it.images, it.emptyText, Scale(ratio)) }
+        }
+    }
+}
+
+private class WidgetData(val items: List<WidgetItem>, val unread: Int, val images: Map<String, Bitmap?>, val emptyText: String)
+
+private val KEY_VERSION = longPreferencesKey("version")
+
+private suspend fun loadWidgetData(context: Context): WidgetData = withContext(Dispatchers.IO) {
+    val snap = loadSnapshot(context)
+    val read = AppDatabase.getInstance(context).readStatusDao().getAllReadSlugs().toSet()
+    val (shown, unread) = pickUnread(snap?.items.orEmpty(), read, MAX_ROWS)
+    val images = shown.flatMap { listOf(thumbFile(context, it.slug), avatarFile(context, it.author)) }
+        .associate { it.name to loadBitmap(it) }
+    val emptyText = if (snap == null) "앱을 한 번 열어 주세요"
+                    else nextCollectLabel(snap.hours, LocalTime.now().hour)
+    WidgetData(shown, unread, images, emptyText)
+}
+
+/** 스냅샷이나 읽음 상태가 바뀌었을 때 — 위젯마다 버전을 올려 재구성 안에서 데이터를 다시 읽게 한다. */
+suspend fun notifyWidget(context: Context) {
+    GlanceAppWidgetManager(context).getGlanceIds(FeedWidget::class.java).forEach { id ->
+        updateAppWidgetState(context, id) { it[KEY_VERSION] = System.currentTimeMillis() }
+        FeedWidget().update(context, id)
     }
 }
 
 @Composable
-private fun WidgetContent() {
-    val prefs = currentState<Preferences>()
-    val json = prefs[KEY_ITEMS] ?: "[]"
-    val items = parseItems(json).take(6)
-    val unreadCount = items.count { !it.read }
+private fun WidgetContent(
+    items: List<WidgetItem>, unread: Int, images: Map<String, Bitmap?>, emptyText: String, s: Scale,
+) {
+    // 실제 화면 기준 크기로 계산한 뒤 s로 위젯 단위로 바꾼다
+    val size = LocalSize.current
+    val realW = size.width.value * s.ratio
+    val avail = size.height.value * s.ratio - 52f   // 패딩 12+4 + 헤더 36
+    // 인앱 행(제목 2줄)이 ≈100dp — 그보다 작으면 행 수를 줄인다
+    val rows = (avail / 92f).toInt().coerceIn(1, MAX_ROWS)
+    val rowH = avail / rows
+    val titleLines = if (rowH >= 120f) 3 else 2
+    val thumbH = minOf(77f, rowH - 16f)   // 인앱 86dp보다 10% 작게 — 제목 열에 폭을 준다
+    val showThumb = realW >= 300f
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(ColorProvider(Color.White))
+            .appWidgetBackground()
+            .background(Background)
+            .cornerRadius(android.R.dimen.system_app_widget_background_radius)
+            .padding(top = s.d(12f), bottom = s.d(4f))
     ) {
         Row(
-            modifier = GlanceModifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = GlanceModifier.fillMaxWidth().height(s.d(36f)).padding(horizontal = s.d(16f))
+                .clickable(actionStartActivity<MainActivity>()),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Contents Curator",
-                style = TextStyle(fontWeight = FontWeight.Bold),
-                modifier = GlanceModifier.defaultWeight(),
+            Image(
+                provider = ImageProvider(R.drawable.widget_app_icon),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = GlanceModifier.size(s.d(24f)).cornerRadius(s.d(7f)),
             )
-            if (unreadCount > 0) {
-                Text(
-                    "$unreadCount 미읽음",
-                    style = TextStyle(color = ColorProvider(Color(0xFF1976D2))),
-                )
+            Spacer(GlanceModifier.width(s.d(8f)))
+            Text("피드", style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(18f), fontWeight = FontWeight.Bold))
+            if (unread > 0) {
+                Spacer(GlanceModifier.width(s.d(6f)))
+                Text("$unread", style = TextStyle(color = ColorProvider(Primary), fontSize = s.t(18f), fontWeight = FontWeight.Bold))
             }
         }
         if (items.isEmpty()) {
-            Text(
-                "콘텐츠가 없습니다. 앱에서 수집을 실행하세요.",
-                style = TextStyle(color = ColorProvider(Color.Gray)),
-                modifier = GlanceModifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+            Column(
+                modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("다 읽었어요", style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(18f), fontWeight = FontWeight.Bold))
+                Spacer(GlanceModifier.height(s.d(4f)))
+                Text(emptyText, style = TextStyle(color = ColorProvider(Outline), fontSize = s.t(13f)))
+            }
         } else {
-            LazyColumn {
-                items(items) { item ->
-                    Row(
-                        modifier = GlanceModifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                            .clickable(actionStartActivity<MainActivity>()),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = GlanceModifier
-                                .size(24.dp)
-                                .background(ColorProvider(platformColor(item.platform)))
-                                .cornerRadius(4.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                platformEmoji(item.platform),
-                                style = TextStyle(color = ColorProvider(Color.White)),
-                            )
-                        }
-                        Spacer(GlanceModifier.width(8.dp))
-                        Text(
-                            item.title,
-                            style = TextStyle(
-                                color = ColorProvider(
-                                    if (item.read) Color.Gray else Color.Black
-                                )
-                            ),
-                            modifier = GlanceModifier.defaultWeight(),
-                        )
-                    }
+            items.take(rows).forEachIndexed { i, item ->
+                if (i > 0) Box(GlanceModifier.fillMaxWidth().height(s.d(0.5f)).background(DIVIDER)) {}
+                ItemRow(
+                    item, s, rowH, titleLines, if (showThumb) thumbH else 0f,
+                    images[thumbFileName(item.slug)], images[avatarFileName(item.author)],
+                )
+            }
+        }
+    }
+}
+
+/** 인앱 FeedItemRow 그대로: 배지 · 아바타 · 채널명 / 제목 / 날짜 + 오른쪽 16:9 썸네일. */
+@Composable
+private fun ItemRow(
+    item: WidgetItem, s: Scale, rowH: Float, titleLines: Int, thumbH: Float, thumb: Bitmap?, avatar: Bitmap?,
+) {
+    Row(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(s.d(rowH))
+            .padding(horizontal = s.d(16f))
+            .clickable(actionStartActivity<MainActivity>(actionParametersOf(SlugParam to item.slug))),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(GlanceModifier.defaultWeight()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = GlanceModifier.size(s.d(20f)).background(platformColor(item.platform)).cornerRadius(s.d(8f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        platformLetter(item.platform),
+                        style = TextStyle(color = ColorProvider(Color.White), fontSize = s.t(7.2f), fontWeight = FontWeight.Bold),
+                    )
+                }
+                Spacer(GlanceModifier.width(s.d(6f)))
+                if (avatar != null) {
+                    Image(
+                        ImageProvider(avatar), contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = GlanceModifier.size(s.d(18f)).cornerRadius(s.d(9f)),
+                    )
+                    Spacer(GlanceModifier.width(s.d(6f)))
+                }
+                Text(item.author, maxLines = 1, style = TextStyle(color = ColorProvider(Primary), fontSize = s.t(11f)))
+            }
+            Spacer(GlanceModifier.height(s.d(2f)))
+            // Glance엔 SemiBold가 없다 — 인앱 미읽음 SemiBold에 가장 가까운 Bold
+            Text(
+                item.title,
+                maxLines = titleLines,
+                style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(15f), fontWeight = FontWeight.Bold),
+            )
+            if (item.date.isNotBlank()) {
+                Text(item.date, style = TextStyle(color = ColorProvider(DATE), fontSize = s.t(10f)))
+            }
+        }
+        if (thumbH > 0f) {
+            Spacer(GlanceModifier.width(s.d(12f)))
+            val thumbMod = GlanceModifier.size(width = s.d(thumbH * 16f / 9f), height = s.d(thumbH)).cornerRadius(s.d(8f))
+            if (thumb != null) {
+                Image(ImageProvider(thumb), contentDescription = null, contentScale = ContentScale.Crop, modifier = thumbMod)
+            } else {
+                // 영상이 아닌 글 — 플랫폼은 배지가 말하므로 블록은 '누가 썼는지'만
+                Box(thumbMod.background(Surface), contentAlignment = Alignment.Center) {
+                    Text(
+                        item.author.take(1),
+                        style = TextStyle(color = ColorProvider(Outline), fontSize = s.t(24f), fontWeight = FontWeight.Bold),
+                    )
                 }
             }
         }
     }
 }
 
-private fun platformEmoji(platform: String) = when (platform.lowercase()) {
-    "youtube" -> "▶"
-    "medium" -> "M"
-    "linkedin" -> "in"
-    "substack" -> "S"
-    "hackernews" -> "Y"
-    else -> "·"
+// ── 데이터 ──────────────────────────────────────────────────────────────────
+
+private val snapshotAdapter = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+    .adapter(WidgetSnapshot::class.java)
+
+private fun snapshotFile(context: Context) = File(context.filesDir, "widget_snapshot.json")
+private fun imageDir(context: Context) = File(context.cacheDir, "widget_thumbs").apply { mkdirs() }
+private fun thumbFileName(slug: String) = "t-$slug.jpg"
+private fun avatarFileName(author: String) = "a-${author.hashCode()}.jpg"
+private fun thumbFile(context: Context, slug: String) = File(imageDir(context), thumbFileName(slug))
+private fun avatarFile(context: Context, author: String) = File(imageDir(context), avatarFileName(author))
+
+private fun loadSnapshot(context: Context): WidgetSnapshot? =
+    runCatching { snapshotAdapter.fromJson(snapshotFile(context).readText()) }.getOrNull()
+
+/** 마지막 동기화에서 받은 수집 시각(개수 > 0인 시각만). 워커가 다음 갱신 시점을 잡을 때 쓴다. */
+fun cachedCollectHours(context: Context): List<Int> = loadSnapshot(context)?.hours.orEmpty()
+
+private fun loadBitmap(f: File): Bitmap? =
+    if (!f.exists()) null
+    else BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })
+
+/**
+ * 받아서 w×h로 잘라 저장. 썸네일은 hqdefault(4:3 레터박스)의 가운데 16:9.
+ * 5행 × (썸네일 320×180 + 아바타 64²) RGB_565 ≈ 620KB — RemoteViews 1MB 한도 안.
+ */
+private fun saveImage(url: String, file: File, w: Int, h: Int) {
+    val src = URL(url).openStream().use { BitmapFactory.decodeStream(it) } ?: return
+    val ch = minOf(src.height, src.width * h / w)
+    val cw = ch * w / h
+    val crop = Bitmap.createBitmap(src, (src.width - cw) / 2, (src.height - ch) / 2, cw, ch)
+    val out = Bitmap.createScaledBitmap(crop, w, h, true)
+    file.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 88, it) }
 }
 
-private fun platformColor(platform: String) = when (platform.lowercase()) {
-    "youtube" -> Color(0xFFFF0000)
-    "medium" -> Color(0xFF000000)
-    "linkedin" -> Color(0xFF0A66C2)
-    "substack" -> Color(0xFFFF6719)
-    "hackernews" -> Color(0xFFFF6600)
-    else -> Color(0xFF888888)
-}
-
-data class WidgetItem(val slug: String, val title: String, val platform: String, val read: Boolean)
-
-private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
-private val listType = Types.newParameterizedType(List::class.java, WidgetItem::class.java)
-private val adapter = moshi.adapter<List<WidgetItem>>(listType)
-
-fun parseItems(json: String): List<WidgetItem> =
-    runCatching { adapter.fromJson(json) ?: emptyList() }.getOrDefault(emptyList())
-
-suspend fun updateWidgetData(context: Context, items: List<WidgetItem>) {
-    val json = adapter.toJson(items)
-    GlanceAppWidgetManager(context).getGlanceIds(FeedWidget::class.java).forEach { id ->
-        updateAppWidgetState(context, PreferencesGlanceStateDefinition, id) {
-            it.toMutablePreferences().apply { this[KEY_ITEMS] = json }
-        }
-        FeedWidget().update(context, id)
+/** 서버에서 목록·수집 시각·아바타를 받아 스냅샷과 이미지를 갱신하고 위젯을 다시 그린다. */
+suspend fun refreshWidget(context: Context) = withContext(Dispatchers.IO) {
+    ServerResolver.ensure(context)
+    val avatars = runCatching {
+        RetrofitClient.api.getSubscriptions()
+            .mapNotNull { s -> s.avatar_url?.takeIf { it.isNotBlank() }?.let { s.author to it } }.toMap()
+    }.getOrDefault(emptyMap())
+    val items = RetrofitClient.api.getAllItems(lite = true).map {
+        WidgetItem(
+            it.slug, it.title, it.platform, it.author,
+            thumbnailUrl(it.platform, it.source_url, it.slug),
+            avatars[it.author],
+            it.published.ifBlank { it.date },
+        )
     }
+    val hours = runCatching {
+        RetrofitClient.api.getSettings().schedule.orEmpty()
+            .filterValues { it > 0 }.keys.mapNotNull { it.toIntOrNull() }.sorted()
+    }.getOrElse { cachedCollectHours(context) }
+    snapshotFile(context).writeText(snapshotAdapter.toJson(WidgetSnapshot(items, hours)))
+
+    val read = AppDatabase.getInstance(context).readStatusDao().getAllReadSlugs().toSet()
+    val wanted = pickUnread(items, read, THUMB_PREFETCH).first
+    val keep = wanted.flatMap { listOf(thumbFileName(it.slug), avatarFileName(it.author)) }.toSet()
+    imageDir(context).listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
+    wanted.forEach { item ->
+        val t = thumbFile(context, item.slug)
+        if (item.thumbnailUrl != null && !t.exists()) runCatching { saveImage(item.thumbnailUrl, t, 320, 180) }
+        val a = avatarFile(context, item.author)
+        if (item.avatarUrl != null && !a.exists()) runCatching { saveImage(item.avatarUrl, a, 64, 64) }
+    }
+    notifyWidget(context)
 }

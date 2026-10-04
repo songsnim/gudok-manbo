@@ -8,6 +8,8 @@ import com.contentscurator.data.api.FeedItem
 import com.contentscurator.data.api.PreviewItem
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
+import com.contentscurator.widget.notifyWidget
+import com.contentscurator.work.FeedSyncWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -100,6 +102,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun markRead(slug: String) {
         viewModelScope.launch {
             repo.markRead(slug)
+            notifyWidget(getApplication())  // 위젯은 다시 그릴 때 Room을 읽어 이 Item을 뺀다
             val current = _uiState.value
             if (current is FeedUiState.Success) {
                 _uiState.value = current.copy(readSlugs = current.readSlugs + slug)
@@ -107,10 +110,17 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 위젯 딥링크 — slug로 본문을 받아 읽음 처리한다. 실패하면 null. */
+    suspend fun openItem(slug: String): FeedItem? {
+        ServerResolver.ensure(getApplication())
+        return runCatching { repo.getItem(slug) }.getOrNull()?.also { markRead(it.slug) }
+    }
+
     /** Feed → Collection 이동. 성공하면 피드 목록에서 사라진다. */
     fun collect(slug: String, onDone: () -> Unit) {
         viewModelScope.launch {
             val ok = runCatching { repo.collectItem(slug) }.isSuccess
+            if (ok) FeedSyncWorker.runNow(getApplication())
             val current = _uiState.value
             if (ok && current is FeedUiState.Success) {
                 _uiState.value = current.copy(items = current.items.filterNot { it.slug == slug })
@@ -121,7 +131,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(slug: String, onDone: () -> Unit) {
         viewModelScope.launch {
-            runCatching { repo.deleteFeedItem(slug) }
+            runCatching { repo.deleteFeedItem(slug) }.onSuccess { FeedSyncWorker.runNow(getApplication()) }
             val current = _uiState.value
             if (current is FeedUiState.Success) {
                 _uiState.value = current.copy(items = current.items.filterNot { it.slug == slug })

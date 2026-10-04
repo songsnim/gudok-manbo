@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>피드 위젯 시안</title>
+<style>
+  /* 인앱 토큰 (ui/theme/Color.kt) — 새 색 없음 */
+  :root{
+    --bg:#121316; --surface:#1E1F22; --text:#E3E3E5; --sub:#8A8D93; --accent:#8AB4F8;
+    --divider:#36383B;       /* outline 30% over bg (인앱 디바이더) */
+    --page:#0A0B0D;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased}
+  main{max-width:1180px;margin:0 auto;padding:40px 16px 80px}
+  h1{font-size:28px;font-weight:700;margin:0 0 6px;letter-spacing:-.4px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 40px;line-height:1.6}
+  h2{font-size:18px;font-weight:700;margin:56px 0 4px;letter-spacing:-.2px}
+  h2 small{color:var(--sub);font-weight:500;font-size:13px;margin-left:8px}
+  .cap{color:var(--sub);font-size:13px;margin:0 0 20px;line-height:1.6}
+  code{color:var(--accent);font-size:12px}
+  .stage{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+  /* 폰 배경화면 */
+  .wall{padding:28px;border-radius:28px;background:
+      radial-gradient(120% 80% at 10% 0%,#2a2f4a 0%,transparent 60%),
+      radial-gradient(90% 70% at 100% 100%,#3b2440 0%,transparent 55%),#14151c;
+    display:flex;flex-direction:column;align-items:center;gap:10px}
+  .size{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .notes{flex:1;min-width:260px;max-width:420px;font-size:13px;line-height:1.7;color:var(--sub);margin:0;padding-left:18px}
+  .notes b{color:var(--text);font-weight:600}
+
+  /* ── 위젯 (1dp = 1px) ───────────────────────────── */
+  .w{width:340px;background:var(--bg);border-radius:24px;padding:10px 16px 8px;display:flex;flex-direction:column;overflow:hidden;flex:none}
+  .hd{height:32px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;flex:none}
+  .hd img{width:20px;height:20px;border-radius:6px;display:block}
+  .hd b{color:var(--accent);margin-left:-2px}
+  .row{display:flex;align-items:center;height:var(--rh,58px);flex:none;border-radius:12px;cursor:pointer}
+  .row:active{background:rgba(227,227,229,.06)}
+  .txt{flex:1;min-width:0;padding-right:12px}
+  .meta{display:flex;align-items:center;gap:6px;height:16px}
+  .badge{width:16px;height:16px;border-radius:6px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:7px;flex:none;line-height:1}
+  .au{font-size:11px;line-height:14px;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ti{font-size:14px;line-height:19px;font-weight:500;margin-top:2px;display:-webkit-box;-webkit-line-clamp:var(--lines,2);-webkit-box-orient:vertical;overflow:hidden}
+  .th{width:80px;height:45px;border-radius:8px;flex:none;position:relative;overflow:hidden;display:grid;place-items:center}
+  .th.yt::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.35))}
+  .th.ini{background:var(--surface);color:var(--sub);font-size:18px;font-weight:700}
+
+  /* 빈 상태 */
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center}
+  .empty .t1{font-size:18px;font-weight:700}
+  .empty .t2{font-size:13px;color:var(--sub)}
+
+  /* 스펙 오버레이 */
+  .spec .row{outline:1px dashed rgba(138,180,248,.35);outline-offset:-1px}
+  .spec .th,.spec .badge,.spec .hd img{outline:1px solid #ff9f43}
+  .spec .hd{outline:1px dashed rgba(138,180,248,.35);outline-offset:-1px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--sub)}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px;border:1px dashed rgba(138,180,248,.6)}
+  .legend span.o::before{border:1px solid #ff9f43}
+
+  /* ── 인앱 FeedItemRow 재현 (FeedScreen.kt:332) ── */
+  .app{width:360px;background:var(--bg);border-radius:16px;overflow:hidden;flex:none}
+  .arow{display:flex;align-items:center;padding:12px 16px;border-bottom:.5px solid var(--divider)}
+  .arow .c{flex:1;min-width:0}
+  .arow .meta{height:20px}
+  .arow .badge{width:20px;height:20px;border-radius:8px}
+  .arow .ti{font-size:15px;line-height:20px;font-weight:600;-webkit-line-clamp:3}
+  .arow .dt{font-size:10px;color:var(--sub)}
+  .arow .th{width:152px;height:86px;margin-left:12px}
+  .pair{display:flex;flex-direction:column;gap:10px}
+  .tag{font-size:11px;color:var(--sub);letter-spacing:.2px}
+  table{border-collapse:collapse;font-size:12px;color:var(--sub);min-width:260px}
+  td,th{padding:6px 10px 6px 0;text-align:left;border-bottom:1px solid #1c1d21;vertical-align:top}
+  th{color:var(--text);font-weight:600}
+
+  @media (max-width:420px){
+    .wall{padding:14px;border-radius:20px;width:100%}
+    .w{max-width:100%}
+    .app{width:100%}
+    .arow .th{width:120px;height:68px}
+    .notes,table{min-width:0;max-width:100%}
+    .lead,.cap,.notes{overflow-wrap:anywhere}
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>피드 위젯 시안</h1>
+  <p class="lead">위젯은 리더가 아니라 입간판입니다. "이런 글 들어와 있어요"까지만 보여주고, 탭 한 번으로 본문에 들어가게 합니다. 읽음 처리는 앱에서만 하고, 앱에서 읽으면 위젯이 바로 갱신됩니다.<br>
+  색은 인앱 다크 토큰만 씁니다. 행 구조는 <code>FeedItemRow</code>와 같습니다(배지와 채널명, 그 아래 제목, 오른쪽에 16:9 썸네일). 1px = 1dp, Galaxy S25 4×4 ≈ 340×340dp 기준입니다.</p>
+
+  <h2>A. 기본 4×4<small>340 × 340dp · 5행 · 제목 2줄</small></h2>
+  <p class="cap">행 어디를 눌러도 그 글 본문이 열립니다. 헤더를 누르면 앱 피드가 열립니다.</p>
+  <div class="stage">
+    <div class="wall"><div id="w44"></div><div class="size">4×4 · 340×340</div></div>
+    <div class="wall"><div id="w44spec"></div>
+      <div class="legend"><span>행 · 헤더 경계</span><span class="o">앱 아이콘 20 · 배지 16 · 썸네일 80×45</span></div></div>
+    <ul class="notes">
+      <li><b>패널</b> 배경은 <code>#121316</code>(인앱 배경). 모서리는 시스템 위젯 반경(One UI ≈ 24dp)이고, 그림자와 테두리는 없습니다. 패딩은 위 10 · 아래 8 · 좌우 16입니다.</li>
+      <li><b>헤더</b>는 32dp입니다. 앱 아이콘(20dp, r6) → 8dp → "피드"(15sp Bold) → 미읽음 총개수(강조색) 순서입니다. 아이콘이 있으니 홈 화면에서 어느 앱 위젯인지 바로 알 수 있습니다.</li>
+      <li><b>행</b>은 58dp입니다. 배지 16dp → 6dp → 채널명(11sp, 강조색) 순서이고, 2dp 띄우고 제목(14sp Medium)이 옵니다.</li>
+      <li><b>제목 열</b>은 216dp입니다. ✓를 빼서 178dp에서 넓어졌고, 2줄에 약 30자가 들어갑니다.</li>
+      <li><b>3줄은 4×4에서 못 넣습니다.</b> 3줄 행은 약 78dp가 필요합니다(메타 16 + 2 + 19×3 + 여유). 5행이면 390dp가 필요한데 4×4에서 쓸 수 있는 높이는 290dp뿐입니다. 행 수를 지키고 2줄 + 넓은 열을 택했습니다. 행 높이가 78dp 이상이 되는 큰 크기(≈4×6)에서만 3줄로 바뀝니다.</li>
+      <li><b>썸네일</b>은 80×45(16:9), r8입니다. 영상이 아닌 글은 표면색 블록에 채널 첫 글자를 넣습니다. 플랫폼은 이미 배지가 말해 주므로 블록은 '누가 썼는지'를 보여줍니다. 그래서 색은 실제 영상 썸네일에만 남습니다.</li>
+    </ul>
+  </div>
+
+  <h2>B. 크기 조절<small>행 수 = ⌊(높이 − 50) ÷ 58⌋, 1–5 · 행 높이 = 남는 높이 ÷ 행 수, 최대 80 · 78 이상이면 제목 3줄</small></h2>
+  <p class="cap">레이아웃은 그대로 두고 행 수만 줄입니다. 남는 높이는 행 높이로 흡수하므로 아래가 비어 보이지 않습니다.</p>
+  <div class="stage">
+    <div class="wall"><div id="w43"></div><div class="size">4×3 · 340×255 · 3행 × 68dp · 2줄</div></div>
+    <div class="wall"><div id="w42"></div><div class="size">4×2 · 340×170 · 2행 × 60dp · 2줄</div></div>
+    <div class="wall"><div id="w32"></div><div class="size">폭 &lt; 300dp(3칸) · 썸네일 숨김</div></div>
+    <div class="wall"><div id="w46"></div><div class="size">참고: 4×6 · 340×450 · 5행 × 80dp · 3줄</div></div>
+  </div>
+
+  <h2>C. 빈 상태<small>다 읽었을 때</small></h2>
+  <p class="cap">다음 수집 시각은 <code>/settings</code> schedule(6·11·17시)에서 현재 이후 첫 시각으로 정합니다. 17시가 지나면 "내일 6시에 새 글이 와요"로 표시합니다. 탭하면 앱 피드가 열립니다.</p>
+  <div class="stage">
+    <div class="wall"><div id="e44"></div><div class="size">4×4</div></div>
+    <div class="wall"><div id="e42"></div><div class="size">4×2</div></div>
+  </div>
+
+  <h2>D. 인앱 피드 행과 나란히<small>같은 배율 1px = 1dp</small></h2>
+  <p class="cap">위젯은 인앱 행의 밀도만 낮춘 버전입니다. 순서·색·모양은 같고 크기만 줄였습니다.</p>
+  <div class="stage">
+    <div class="wall pair"><span class="tag">인앱 FeedItemRow · 360dp 폭</span><div class="app" id="app"></div></div>
+    <div class="wall pair"><span class="tag">위젯 행</span><div id="wpair"></div></div>
+    <table>
+      <tr><th></th><th>인앱</th><th>위젯</th></tr>
+      <tr><td>배지</td><td>PlatformBadge 20dp · r8 · 7sp</td><td>같은 매핑 16dp · r6 · 7sp</td></tr>
+      <tr><td>채널명</td><td>11sp · #8AB4F8</td><td>같음</td></tr>
+      <tr><td>제목</td><td>15sp SemiBold · 3줄</td><td>14sp Medium · 2줄(행 ≥78dp면 3줄)</td></tr>
+      <tr><td>썸네일</td><td>152×86 · r8 · 오른쪽 · 영상만</td><td>80×45 · r8 · 오른쪽 · 글은 표면색 블록 + 채널 첫 글자</td></tr>
+      <tr><td>날짜</td><td>10sp 3번째 줄</td><td>생략 (5개 모두 최신)</td></tr>
+      <tr><td>읽음</td><td>알파 0.45로 남음</td><td>목록에서 빠짐 (미읽음만 표시)</td></tr>
+      <tr><td>탭</td><td>상세 화면</td><td>같은 상세 화면 (slug 딥링크)</td></tr>
+    </table>
+  </div>
+</main>
+
+<script>
+const ICON='data:image/png;base64,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'; // res/mipmap-hdpi/ic_launcher.png
+// 인앱 platformColor / PlatformBadge 매핑 (SubscriptionsScreen.kt:110, 603)
+const P={youtube:['#FF0000','▶'],medium:['#3C4043','M'],linkedin:['#0A66C2','in'],substack:['#FF6719','S'],hackernews:['#FF6600','Y']};
+// YouTube 썸네일 자리 — 실제는 hqdefault 비트맵. 여기선 그라디언트로 대신
+const G=['linear-gradient(135deg,#1d3b5c,#4a7fb0 55%,#e8c07a)','linear-gradient(160deg,#2b2b2b,#6b4a3a 50%,#d9895b)','linear-gradient(120deg,#123a2e,#2f8f6a 60%,#c8e6a0)','linear-gradient(140deg,#3a1f4f,#8a4fb0 55%,#f2b5c9)'];
+const ITEMS=[
+  {p:'youtube',a:'머니토크',t:'금리 인하 이후 부동산 시장, 진짜로 반등할까? 데이터로 따져봤습니다',g:0},
+  {p:'medium',a:'이수진',t:'Kotlin 코루틴 취소가 생각대로 안 될 때 확인할 다섯 가지와 실제 장애 사례'},
+  {p:'youtube',a:'지식한입',t:'잠을 줄이면 생기는 일 — 수면 과학자가 말하는 6시간의 함정',g:1},
+  {p:'linkedin',a:'박정호',t:'시니어 개발자가 코드 리뷰에서 가장 먼저 보는 세 가지, 그리고 절대 지적하지 않는 것'},
+  {p:'youtube',a:'요리하는 공대생',t:'15분 만에 끝내는 일주일 도시락 준비',g:2},
+];
+const unread=12;
+
+const badge=it=>`<div class="badge" style="background:${P[it.p][0]}">${P[it.p][1]}</div>`;
+const thumb=it=>it.g!=null
+  ?`<div class="th yt" style="background:${G[it.g]}"></div>`
+  :`<div class="th ini">${it.a[0]}</div>`;
+
+function row(it,{rh=58,lines=2,noThumb=false}={}){
+  return `<div class="row" style="--rh:${rh}px;--lines:${lines}" title="본문 열기 (slug 딥링크)">
+    <div class="txt"><div class="meta">${badge(it)}<div class="au">${it.a}</div></div><div class="ti">${it.t}</div></div>${noThumb?'':thumb(it)}</div>`;
+}
+function widget(el,{h=340,w=340,spec=false,empty=false}={}){
+  const avail=h-50;
+  const rows=Math.max(1,Math.min(5,Math.floor(avail/58)));
+  const rh=Math.min(80,Math.floor(avail/rows));
+  const lines=rh>=78?3:2;
+  const noThumb=w<300;
+  const list=empty?[]:ITEMS.slice(0,rows);
+  const body=list.length
+    ?list.map(it=>row(it,{rh,lines,noThumb})).join('')
+    :`<div class="empty"><div class="t1">다 읽었어요</div><div class="t2">17시에 새 글이 와요</div></div>`;
+  el.innerHTML=`<div class="w ${spec?'spec':''}" style="height:${h}px;${w<340?`width:${w}px`:''}"><div class="hd"><img src="${ICON}" alt="">피드${list.length?` <b>${unread}</b>`:''}</div>${body}</div>`;
+}
+const $=id=>document.getElementById(id);
+widget($('w44'));
+widget($('w44spec'),{spec:true});
+widget($('w43'),{h:255});
+widget($('w42'),{h:170});
+widget($('w32'),{h:170,w:255});
+widget($('w46'),{h:450});
+widget($('e44'),{empty:true});
+widget($('e42'),{h:170,empty:true});
+
+// D. 인앱 행 재현
+$('app').innerHTML=[ITEMS[0],ITEMS[1]].map(it=>`<div class="arow"><div class="c">
+  <div class="meta">${badge(it)}<div class="au">${it.a}</div></div>
+  <div class="ti" style="margin-top:2px">${it.t}</div><div class="dt">2026-10-05</div></div>
+  ${it.g!=null?`<div class="th yt" style="background:${G[it.g]}"></div>`:''}</div>`).join('');
+$('wpair').innerHTML=`<div class="w" style="height:auto;padding:4px 16px">${row(ITEMS[0])}${row(ITEMS[1])}</div>`;
+</script>
+</body>
+</html>

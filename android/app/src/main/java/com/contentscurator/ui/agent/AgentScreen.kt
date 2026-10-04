@@ -28,8 +28,7 @@ import com.contentscurator.data.api.Stats
 import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
 import com.contentscurator.widget.FeedWidgetReceiver
-import com.contentscurator.widget.WidgetItem
-import com.contentscurator.widget.updateWidgetData
+import com.contentscurator.widget.refreshWidget
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -85,10 +84,7 @@ class AgentViewModel(app: Application) : AndroidViewModel(app) {
             val collected = (result["collected"] as? Number)?.toInt() ?: 0
             _status.value = "수집 완료: ${collected}개 저장됨"
             // 수집 후 위젯 자동 갱신
-            val items = repo.getTodayFeed()
-            val readSlugs = repo.getAllReadSlugs()
-            val widgetItems = items.map { WidgetItem(it.slug, it.title, it.platform, it.slug in readSlugs) }
-            updateWidgetData(getApplication(), widgetItems)
+            refreshWidget(getApplication())
         }.onFailure {
             _status.value = "오류: ${it.message}"
         }
@@ -122,11 +118,8 @@ class AgentViewModel(app: Application) : AndroidViewModel(app) {
         _widgetLoading.value = true
         _status.value = null
         runCatching {
-            val items = repo.getTodayFeed()
-            val readSlugs = repo.getAllReadSlugs()
-            val widgetItems = items.map { WidgetItem(it.slug, it.title, it.platform, it.slug in readSlugs) }
-            updateWidgetData(getApplication(), widgetItems)
-            _status.value = "위젯 업데이트 완료: ${widgetItems.size}개 중 ${widgetItems.count { !it.read }}개 미읽음"
+            refreshWidget(getApplication())
+            _status.value = "위젯 업데이트 완료"
         }.onFailure {
             _status.value = "위젯 오류: ${it.message}"
         }

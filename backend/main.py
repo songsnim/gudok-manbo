@@ -23,10 +23,12 @@ def feed_today():
 
 
 @app.get("/feed/items")
-def feed_items(date: Optional[str] = None):
+def feed_items(date: Optional[str] = None, lite: bool = False):
     items = get_all_items()
     if date:
         items = [i for i in items if i["date"] == date]
+    if lite:  # 위젯용 — 본문 없이 목록만
+        items = [{**i, "body": ""} for i in items]
     return items
 
 

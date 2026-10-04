@@ -117,6 +117,12 @@ fun platformColor(platform: String): Color = when (platform.lowercase()) {
     else -> Color(0xFF888888)
 }
 
+/** 배지 글자. 인앱 PlatformBadge와 위젯이 공유한다. */
+fun platformLetter(platform: String): String = when (platform.lowercase()) {
+    "youtube" -> "▶"; "medium" -> "M"; "linkedin" -> "in"
+    "substack" -> "S"; "hackernews" -> "Y"; else -> "·"
+}
+
 fun platformLabel(platform: String): String = when (platform.lowercase()) {
     "youtube" -> "YouTube"
     "medium" -> "Medium"
@@ -601,10 +607,7 @@ internal fun PreviewRow(
 
 @Composable
 fun PlatformBadge(platform: String, size: Int = 36) {
-    val emoji = when (platform.lowercase()) {
-        "youtube" -> "▶"; "medium" -> "M"; "linkedin" -> "in"
-        "substack" -> "S"; "hackernews" -> "Y"; else -> "·"
-    }
+    val emoji = platformLetter(platform)
     Box(
         modifier = Modifier
             .size(size.dp)

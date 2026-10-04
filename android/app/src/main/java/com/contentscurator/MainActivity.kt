@@ -1,5 +1,6 @@
 package com.contentscurator
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,8 +17,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.contentscurator.ui.agent.AgentScreen
 import com.contentscurator.ui.collection.CollectionScreen
 import com.contentscurator.ui.feed.FeedScreen
@@ -33,27 +32,48 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 }
 
 class MainActivity : ComponentActivity() {
+    /** 위젯 행에서 넘어온 slug. 본문을 연 뒤 비운다. */
+    private val openSlug = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 앱 시작 시 위젯 즉시 갱신
-        WorkManager.getInstance(this).enqueue(
-            OneTimeWorkRequestBuilder<FeedSyncWorker>().build()
-        )
+        FeedSyncWorker.runNow(this)
         FeedSyncWorker.schedule(this)
+        if (savedInstanceState == null) openSlug.value = intent.getStringExtra(EXTRA_SLUG)
         enableEdgeToEdge()
         setContent {
             ContentsCuratorTheme {
-                MainNav()
+                MainNav(openSlug.value) { openSlug.value = null }
             }
         }
+    }
+
+    // singleTask — 앱이 떠 있을 때 위젯을 탭하면 여기로 온다
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(EXTRA_SLUG)?.let { openSlug.value = it }
+    }
+
+    companion object {
+        const val EXTRA_SLUG = "slug"
     }
 }
 
 @Composable
-private fun MainNav() {
+private fun MainNav(openSlug: String?, onOpened: () -> Unit) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
+
+    LaunchedEffect(openSlug) {
+        if (openSlug != null && currentRoute != Tab.Feed.route) {
+            navController.navigate(Tab.Feed.route) {
+                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -76,7 +96,7 @@ private fun MainNav() {
         }
     ) { _ ->
         NavHost(navController = navController, startDestination = Tab.Feed.route) {
-            composable(Tab.Feed.route) { FeedScreen() }
+            composable(Tab.Feed.route) { FeedScreen(openSlug = openSlug, onOpened = onOpened) }
             composable(Tab.Subscriptions.route) { SubscriptionsScreen() }
             composable(Tab.Agent.route) { AgentScreen() }
             composable(Tab.Collection.route) { CollectionScreen() }

@@ -45,9 +45,19 @@ import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(vm: FeedViewModel = viewModel()) {
+fun FeedScreen(
+    vm: FeedViewModel = viewModel(),
+    openSlug: String? = null,
+    onOpened: () -> Unit = {},
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var selectedItem by remember { mutableStateOf<FeedItem?>(null) }
+
+    LaunchedEffect(openSlug) {
+        if (openSlug == null) return@LaunchedEffect
+        vm.openItem(openSlug)?.let { selectedItem = it }
+        onOpened()
+    }
 
     if (selectedItem != null) {
         ItemDetailScreen(
@@ -317,11 +327,13 @@ private fun VideoSearchDialog(vm: FeedViewModel, onDismiss: () -> Unit) {
     )
 }
 
-/** YouTube 영상이면 썸네일 URL. 그 외 플랫폼은 null. */
-private fun thumbnailUrl(item: FeedItem): String? {
-    if (item.platform.lowercase() != "youtube") return null
-    val videoId = Regex("[?&]v=([^&]+)").find(item.source_url)?.groupValues?.get(1)
-        ?: item.slug.removePrefix("yt-").takeIf { it != item.slug }
+private fun thumbnailUrl(item: FeedItem) = thumbnailUrl(item.platform, item.source_url, item.slug)
+
+/** YouTube 영상이면 썸네일 URL. 그 외 플랫폼은 null. 위젯도 같은 규칙을 쓴다. */
+fun thumbnailUrl(platform: String, sourceUrl: String, slug: String): String? {
+    if (platform.lowercase() != "youtube") return null
+    val videoId = Regex("[?&]v=([^&]+)").find(sourceUrl)?.groupValues?.get(1)
+        ?: slug.removePrefix("yt-").takeIf { it != slug }
         ?: return null
     // hqdefault은 4:3에 레터박스 — Crop으로 16:9로 자르면 검은 띠가 정확히 잘린다
     return "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
