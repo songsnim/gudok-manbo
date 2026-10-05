@@ -26,7 +26,6 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.contentscurator.MainActivity
-import com.contentscurator.R
 import com.contentscurator.data.ServerResolver
 import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.db.AppDatabase
@@ -83,24 +82,34 @@ class FeedWidget : GlanceAppWidget() {
             // 그래서 데이터는 재구성 안에서, notifyWidget이 올리는 버전이 바뀔 때마다 다시 읽는다.
             val version = currentState(KEY_VERSION) ?: 0L
             val data by produceState<WidgetData?>(null, version) { value = loadWidgetData(context) }
-            data?.let { WidgetContent(it.items, it.unread, it.images, it.emptyText, Scale(ratio)) }
+            data?.let { WidgetContent(it.items, it.bgAlpha, it.images, it.emptyText, Scale(ratio)) }
         }
     }
 }
 
-private class WidgetData(val items: List<WidgetItem>, val unread: Int, val images: Map<String, Bitmap?>, val emptyText: String)
+private class WidgetData(val items: List<WidgetItem>, val bgAlpha: Float, val images: Map<String, Bitmap?>, val emptyText: String)
 
 private val KEY_VERSION = longPreferencesKey("version")
 
 private suspend fun loadWidgetData(context: Context): WidgetData = withContext(Dispatchers.IO) {
     val snap = loadSnapshot(context)
     val read = AppDatabase.getInstance(context).readStatusDao().getAllReadSlugs().toSet()
-    val (shown, unread) = pickUnread(snap?.items.orEmpty(), read, MAX_ROWS)
+    val shown = pickUnread(snap?.items.orEmpty(), read, MAX_ROWS).first
     val images = shown.flatMap { listOf(thumbFile(context, it.slug), avatarFile(context, it.author)) }
         .associate { it.name to loadBitmap(it) }
     val emptyText = if (snap == null) "앱을 한 번 열어 주세요"
                     else nextCollectLabel(snap.hours, LocalTime.now().hour)
-    WidgetData(shown, unread, images, emptyText)
+    WidgetData(shown, 1f - widgetTransparency(context) / 100f, images, emptyText)
+}
+
+private fun widgetPrefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
+
+/** 배경 투명도 0–100. 100이면 배경 없이 글이 배경화면 위에 뜬다. */
+fun widgetTransparency(context: Context): Int = widgetPrefs(context).getInt("transparency", 0)
+
+suspend fun setWidgetTransparency(context: Context, value: Int) {
+    widgetPrefs(context).edit().putInt("transparency", value.coerceIn(0, 100)).apply()
+    notifyWidget(context)
 }
 
 /** 스냅샷이나 읽음 상태가 바뀌었을 때 — 위젯마다 버전을 올려 재구성 안에서 데이터를 다시 읽게 한다. */
@@ -113,45 +122,28 @@ suspend fun notifyWidget(context: Context) {
 
 @Composable
 private fun WidgetContent(
-    items: List<WidgetItem>, unread: Int, images: Map<String, Bitmap?>, emptyText: String, s: Scale,
+    items: List<WidgetItem>, bgAlpha: Float, images: Map<String, Bitmap?>, emptyText: String, s: Scale,
 ) {
     // 실제 화면 기준 크기로 계산한 뒤 s로 위젯 단위로 바꾼다
     val size = LocalSize.current
     val realW = size.width.value * s.ratio
-    val avail = size.height.value * s.ratio - 52f   // 패딩 12+4 + 헤더 36
-    // 인앱 행(제목 2줄)이 ≈100dp — 그보다 작으면 행 수를 줄인다
-    val rows = (avail / 92f).toInt().coerceIn(1, MAX_ROWS)
+    // 헤더 없음 — 위아래 패딩 4씩 빼고 전부 행에 쓴다. 5×3(≈280dp)에서 3행이 들어가는 높이.
+    val avail = size.height.value * s.ratio - 8f
+    val rows = (avail / 80f).toInt().coerceIn(1, MAX_ROWS)
     val rowH = avail / rows
-    val titleLines = if (rowH >= 120f) 3 else 2
+    val titleLines = if (rowH >= 105f) 3 else 2
     val thumbH = minOf(77f, rowH - 16f)   // 인앱 86dp보다 10% 작게 — 제목 열에 폭을 준다
     val showThumb = realW >= 300f
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
+            // One UI는 이 표시가 없으면 위젯을 못 그린다("위젯을 추가할 수 없습니다") — 완전 투명이어도 유지
             .appWidgetBackground()
-            .background(Background)
+            .background(Background.copy(alpha = bgAlpha))
             .cornerRadius(android.R.dimen.system_app_widget_background_radius)
-            .padding(top = s.d(12f), bottom = s.d(4f))
+            .padding(vertical = s.d(4f))
     ) {
-        Row(
-            modifier = GlanceModifier.fillMaxWidth().height(s.d(36f)).padding(horizontal = s.d(16f))
-                .clickable(actionStartActivity<MainActivity>()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Image(
-                provider = ImageProvider(R.drawable.widget_app_icon),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = GlanceModifier.size(s.d(24f)).cornerRadius(s.d(7f)),
-            )
-            Spacer(GlanceModifier.width(s.d(8f)))
-            Text("피드", style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(18f), fontWeight = FontWeight.Bold))
-            if (unread > 0) {
-                Spacer(GlanceModifier.width(s.d(6f)))
-                Text("$unread", style = TextStyle(color = ColorProvider(Primary), fontSize = s.t(18f), fontWeight = FontWeight.Bold))
-            }
-        }
         if (items.isEmpty()) {
             Column(
                 modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
@@ -164,7 +156,7 @@ private fun WidgetContent(
             }
         } else {
             items.take(rows).forEachIndexed { i, item ->
-                if (i > 0) Box(GlanceModifier.fillMaxWidth().height(s.d(0.5f)).background(DIVIDER)) {}
+                if (i > 0) Box(GlanceModifier.fillMaxWidth().height(s.d(0.5f)).background(DIVIDER.copy(alpha = bgAlpha))) {}
                 ItemRow(
                     item, s, rowH, titleLines, if (showThumb) thumbH else 0f,
                     images[thumbFileName(item.slug)], images[avatarFileName(item.author)],
@@ -213,7 +205,7 @@ private fun ItemRow(
             Text(
                 item.title,
                 maxLines = titleLines,
-                style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(15f), fontWeight = FontWeight.Bold),
+                style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(13f), fontWeight = FontWeight.Bold),
             )
             if (item.date.isNotBlank()) {
                 Text(item.date, style = TextStyle(color = ColorProvider(DATE), fontSize = s.t(10f)))

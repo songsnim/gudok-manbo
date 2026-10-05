@@ -29,6 +29,9 @@ import com.contentscurator.data.db.AppDatabase
 import com.contentscurator.data.repository.FeedRepository
 import com.contentscurator.widget.FeedWidgetReceiver
 import com.contentscurator.widget.refreshWidget
+import com.contentscurator.widget.setWidgetTransparency
+import com.contentscurator.widget.widgetTransparency
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -172,6 +175,8 @@ fun AgentScreen(vm: AgentViewModel = viewModel()) {
                 }
                 Text("위젯 강제 업데이트")
             }
+            Spacer(Modifier.height(16.dp))
+            WidgetTransparencySlider()
 
             // ── AI 소스 탐색 ──────────────────────────────────────
             Spacer(Modifier.height(32.dp))
@@ -433,4 +438,22 @@ private fun StatsSection(stats: Stats?, onRefresh: () -> Unit) {
 private fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.fillMaxWidth())
     Spacer(Modifier.height(8.dp))
+}
+
+/** 위젯 배경 투명도. 손을 뗄 때 저장하고 위젯을 다시 그린다. */
+@Composable
+private fun WidgetTransparencySlider() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var value by remember { mutableFloatStateOf(widgetTransparency(context).toFloat()) }
+    Column(Modifier.fillMaxWidth()) {
+        Text("위젯 투명도 ${value.toInt()}%", style = MaterialTheme.typography.bodyMedium)
+        Slider(
+            value = value,
+            onValueChange = { value = it },
+            onValueChangeFinished = { scope.launch { setWidgetTransparency(context, value.toInt()) } },
+            valueRange = 0f..100f,
+            steps = 9,
+        )
+    }
 }
