@@ -26,3 +26,7 @@ fun nextCollectLabel(hours: List<Int>, nowHour: Int): String {
     val next = hours.sorted().firstOrNull { it > nowHour }
     return if (next != null) "${next}시에 새 글이 와요" else "내일 ${hours.min()}시에 새 글이 와요"
 }
+
+/** 2026-10-05 → 26-10-05. 형식이 다르면 그대로. */
+fun shortDate(date: String): String =
+    if (Regex("""\d{4}-\d{2}-\d{2}""").matches(date)) date.substring(2) else date

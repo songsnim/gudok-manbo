@@ -19,4 +19,10 @@ class WidgetLogicTest {
         assertEquals("11시에 새 글이 와요", nextCollectLabel(listOf(17, 6, 11), 6))
         assertEquals("내일 6시에 새 글이 와요", nextCollectLabel(listOf(6, 11, 17), 17))
     }
+
+    @Test
+    fun shortDateDropsCentury() {
+        assertEquals("26-10-05", shortDate("2026-10-05"))
+        assertEquals("", shortDate(""))
+    }
 }

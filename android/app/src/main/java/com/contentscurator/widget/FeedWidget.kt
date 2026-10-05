@@ -131,7 +131,8 @@ private fun WidgetContent(
     val avail = size.height.value * s.ratio - 8f
     val rows = (avail / 80f).toInt().coerceIn(1, MAX_ROWS)
     val rowH = avail / rows
-    val titleLines = if (rowH >= 105f) 3 else 2
+    // 메타 20 + 2 + 13sp 3줄(≈52) ≈ 74 — 5×3의 행(≈88)에 3줄이 들어간다
+    val titleLines = if (rowH >= 78f) 3 else 2
     val thumbH = minOf(77f, rowH - 16f)   // 인앱 86dp보다 10% 작게 — 제목 열에 폭을 준다
     val showThumb = realW >= 300f
 
@@ -199,6 +200,11 @@ private fun ItemRow(
                     Spacer(GlanceModifier.width(s.d(6f)))
                 }
                 Text(item.author, maxLines = 1, style = TextStyle(color = ColorProvider(Primary), fontSize = s.t(11f)))
+                if (item.date.isNotBlank()) {
+                    Spacer(GlanceModifier.width(s.d(6f)))
+                    // 날짜는 채널명 옆 한 줄로 — 아래 줄을 제목에 준다
+                    Text(shortDate(item.date), maxLines = 1, style = TextStyle(color = ColorProvider(DATE), fontSize = s.t(10f)))
+                }
             }
             Spacer(GlanceModifier.height(s.d(2f)))
             // Glance엔 SemiBold가 없다 — 인앱 미읽음 SemiBold에 가장 가까운 Bold
@@ -207,9 +213,6 @@ private fun ItemRow(
                 maxLines = titleLines,
                 style = TextStyle(color = ColorProvider(OnBackground), fontSize = s.t(13f), fontWeight = FontWeight.Bold),
             )
-            if (item.date.isNotBlank()) {
-                Text(item.date, style = TextStyle(color = ColorProvider(DATE), fontSize = s.t(10f)))
-            }
         }
         if (thumbH > 0f) {
             Spacer(GlanceModifier.width(s.d(12f)))
