@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import logging
+import re
 import frontmatter
 
 from config import settings
@@ -22,6 +23,10 @@ def write_item(
     settings.articles_path.mkdir(parents=True, exist_ok=True)
     path = item_path(slug, title)
 
+    meta = {}
+    tags = _pick_tags(title, body)
+    if tags:
+        meta["tags"] = tags
     post = frontmatter.Post(
         body,
         slug=slug,
@@ -32,9 +37,62 @@ def write_item(
         date=date.today(),
         published=published,  # 매체에 실제 게시된 날짜 (date는 수집일)
         subscription=subscription,
+        **meta,
     )
     path.write_text(frontmatter.dumps(post), encoding="utf-8")
     return path
+
+
+def load_taxonomy() -> tuple[str, set[str]]:
+    """Vault 루트 CLAUDE.md의 태그 체계 → (문서 원문, 허용 태그 집합).
+
+    태그 체계의 SSOT는 그 문서다. 사용자가 표를 고치면 다음 수집부터 그대로 따른다.
+    문서가 없으면 ("", set()) — 태깅을 건너뛴다.
+    """
+    path = settings.vault_path / "CLAUDE.md"
+    if not path.exists():
+        return "", set()
+    text = path.read_text(encoding="utf-8")
+    allowed = set()
+    # 태그 표의 한 행: | `tech` | `ml` `agent` ... |
+    for top, subs in re.findall(r"^\|\s*`([a-z-]+)`\s*\|(.*)\|\s*$", text, re.M):
+        allowed.add(top)
+        allowed.update(f"{top}/{s}" for s in re.findall(r"`([a-z-]+)`", subs))
+    return text, allowed
+
+
+def _pick_tags(title: str, body: str) -> list[str]:
+    """태그는 덤이다 — 고르다 실패해도 Item 저장은 막지 않는다."""
+    rules, allowed = load_taxonomy()
+    if not allowed:
+        return []
+    try:
+        from llm.openrouter_client import pick_tags
+        return pick_tags(rules, allowed, title, body)
+    except Exception as e:
+        logger.warning(f"태그 선택 실패 ({title}): {type(e).__name__}: {e}")
+        return []
+
+
+def tag_untagged_items() -> int:
+    """tags가 없는 Item(Feed·Collection)에 태그를 단다. 태그를 단 개수 반환.
+
+    기존 Item 일괄 태깅용. 실행: cd backend && python -m vault.writer
+    """
+    done = 0
+    for folder in (settings.articles_path, settings.collections_path):
+        for f in sorted(folder.glob("*.md")) if folder.exists() else []:
+            post = frontmatter.load(str(f))
+            if post.metadata.get("tags") or not post.metadata.get("slug"):
+                continue
+            tags = _pick_tags(post.metadata.get("title", ""), post.content)
+            if not tags:
+                continue
+            post.metadata["tags"] = tags
+            f.write_text(frontmatter.dumps(post), encoding="utf-8")
+            done += 1
+            logger.info(f"태그 {tags}: {f.name}")
+    return done
 
 
 def delete_item(slug: str) -> bool:
@@ -95,3 +153,8 @@ def _collected_date(path: Path):
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
     except Exception:
         return None
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    print(f"태그 단 Item: {tag_untagged_items()}개")

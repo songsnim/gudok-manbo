@@ -153,6 +153,39 @@ def generate_title(content: str) -> str:
     return _chat(prompt)
 
 
+_TAG_PROMPT = """\
+아래 태그 체계 문서를 따라 이 글에 맞는 태그를 1~2개 골라라.
+문서의 태그 표에 있는 태그만 쓴다. 형식은 `최상위/하위`. 그 영역 전체를 다루는 글만 최상위 단독.
+
+반드시 아래 JSON만 출력하라 (다른 텍스트 없이):
+{{"tags": ["tech/agent"]}}
+
+태그 체계 문서:
+{rules}
+
+제목: {title}
+
+본문:
+{body}"""
+
+
+def clean_tags(raw, allowed: set[str]) -> list[str]:
+    """LLM이 고른 태그를 정규화하고 허용 목록 밖은 버린다. 최대 2개."""
+    if not isinstance(raw, list):
+        return []
+    tags = (str(t).strip().lstrip("#").lower() for t in raw)
+    return [t for t in dict.fromkeys(tags) if t in allowed][:2]
+
+
+def pick_tags(rules: str, allowed: set[str], title: str, body: str) -> list[str]:
+    """태그 체계 문서 안에서 Item 태그를 고른다. 새 태그를 지어내지 못하게 allowed로 거른다."""
+    prompt = _TAG_PROMPT.format(rules=rules, title=title, body=body[:4000])
+    content = _chat(prompt, temperature=0, response_format={"type": "json_object"})
+    # 모델이 ```json 펜스로 감싸 줄 때가 있다
+    match = re.search(r"\{.*\}", content, re.S)
+    return clean_tags(json.loads(match.group(0) if match else content).get("tags"), allowed)
+
+
 _DISCOVER_PROMPT = """\
 당신은 개인 컨텐츠 큐레이터 AI입니다. 사용자 요청에 맞는 고품질 컨텐츠 소스를 추천해주세요.
 
