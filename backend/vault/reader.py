@@ -65,6 +65,8 @@ def _items_in(path: Path) -> list[dict]:
         item = _parse_file(f)
         if item:
             items.append(item)
+    # 수집일 최신순. mtime은 Obsidian 편집·동기화로 바뀌므로 같은 날 안에서만 쓴다 (stable sort).
+    items.sort(key=lambda i: i["date"], reverse=True)
     return items
 
 
