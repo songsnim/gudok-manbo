@@ -15,7 +15,13 @@ from vault.writer import write_item
 
 
 _RSS_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+# 영어로 요청한다. 한국어로 요청하면 YouTube가 제목을 기계 번역해서 주는데, 그 번역이
+# 가끔 통째로 헛나온다("Dashboards Are Dead — Sarah Simionescu, Composio" →
+# "발표 제목 — Sarah, Datadog"). 원문 제목이 SSOT다.
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 def _fetch_feed(channel_id: str):
@@ -31,7 +37,7 @@ def _fetch_feed(channel_id: str):
 
 _INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"  # YouTube 웹 공개 키
 _INNERTUBE_CTX = {"client": {"clientName": "WEB", "clientVersion": "2.20240101.00.00",
-                             "hl": "ko", "gl": "KR"}}
+                             "hl": "en", "gl": "US"}}  # 번역 제목 방지 — _HEADERS 주석 참고
 
 
 def _grid_items(data: dict) -> list[dict]:
@@ -61,7 +67,7 @@ def fetch_videos(channel_id: str, cursor: str | None = None) -> tuple[list[dict]
         r.raise_for_status()
         data = r.json()
     else:
-        r = httpx.get(f"https://www.youtube.com/channel/{channel_id}/videos",
+        r = httpx.get(f"https://www.youtube.com/channel/{channel_id}/videos?hl=en",
                       headers=_HEADERS, timeout=15, follow_redirects=True)
         r.raise_for_status()
         m = re.search(r'var ytInitialData\s*=\s*({.+?});\s*</script>', r.text, re.DOTALL)
@@ -99,9 +105,13 @@ _PUBLISHED_RE = re.compile(r'itemprop="datePublished" content="([^"]+)"|"publish
 _EXACT_UNIT_DAYS = {
     "초": 0, "분": 0, "시간": 0, "일": 1,
     "second": 0, "minute": 0, "hour": 0, "day": 1,
+    # 영어 목록은 "14h ago" / "1d ago" 같은 축약형으로도 온다. mo=개월이라 m(분)과 구분한다
+    "s": 0, "m": 0, "h": 0, "d": 1,
 }
 _RELATIVE_RE = re.compile(
-    r"(\d+)\s*(초|분|시간|일|주|개월|년|seconds?|minutes?|hours?|days?|weeks?|months?|years?)"
+    r"(\d+)\s*(초|분|시간|일|주|개월|년"
+    r"|seconds?|minutes?|hours?|days?|weeks?|months?|years?"
+    r"|mo|[smhdwy])\b"
 )
 
 
@@ -301,3 +311,4 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
         saved.append(slug)
 
     return saved
+
