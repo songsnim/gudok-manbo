@@ -1,4 +1,4 @@
-"""쇼츠 후순위 정렬 점검. 실행: python scrapers/test_shorts_last.py"""
+"""쇼츠 거르기 점검. 실행: python scrapers/test_shorts_last.py"""
 import sys
 import tempfile
 from pathlib import Path
@@ -43,13 +43,13 @@ entries = [{"yt_videoid": v} for v in ("s1", "a", "s2", "b")]
 
 
 # ── 채널 ID가 없으면 영상별로 묻는다 ─────────────────────────────────────────
-assert [e["yt_videoid"] for e in youtube.shorts_last(entries)] == ["a", "b", "s1", "s2"]
+assert [e["yt_videoid"] for e in youtube.shorts_last(entries)] == ["a", "b"]
 assert head_calls == ["s1", "a", "s2", "b"], head_calls
 assert tab_calls == [], tab_calls
 
 # 판별 결과는 기억된다 — 두 번째 호출은 요청이 0
 head_calls.clear()
-assert [e["yt_videoid"] for e in youtube.shorts_last(entries)] == ["a", "b", "s1", "s2"]
+assert [e["yt_videoid"] for e in youtube.shorts_last(entries)] == ["a", "b"]
 assert head_calls == [], head_calls
 
 
@@ -57,13 +57,13 @@ assert head_calls == [], head_calls
 fresh_cache()
 head_calls.clear()
 order = [e["yt_videoid"] for e in youtube.shorts_last(entries, "UC-test")]
-assert order == ["a", "b", "s1", "s2"], order
+assert order == ["a", "b"], order
 assert tab_calls == ["UC-test"], tab_calls
 assert head_calls == [], head_calls  # 영상별 HEAD는 한 번도 나가지 않는다
 
 # 캐시가 다 채워졌으면 탭도 부르지 않는다
 tab_calls.clear()
-assert [e["yt_videoid"] for e in youtube.shorts_last(entries, "UC-test")] == ["a", "b", "s1", "s2"]
+assert [e["yt_videoid"] for e in youtube.shorts_last(entries, "UC-test")] == ["a", "b"]
 assert tab_calls == [], tab_calls
 
 
@@ -72,7 +72,11 @@ fresh_cache()
 head_calls.clear()
 tab_calls.clear()
 youtube.channel_shorts = lambda channel_id: None
-assert [e["yt_videoid"] for e in youtube.shorts_last(entries, "UC-test")] == ["a", "b", "s1", "s2"]
+assert [e["yt_videoid"] for e in youtube.shorts_last(entries, "UC-test")] == ["a", "b"]
 assert head_calls == ["s1", "a", "s2", "b"], head_calls
+
+# ── 일반 영상이 하나도 없는 채널만 쇼츠를 받는다 ─────────────────────────────
+only_shorts = [{"yt_videoid": v} for v in ("s1", "s2")]
+assert [e["yt_videoid"] for e in youtube.shorts_last(only_shorts, "UC-test")] == ["s1", "s2"]
 
 print("ok")

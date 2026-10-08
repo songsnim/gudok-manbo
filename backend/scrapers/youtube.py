@@ -231,7 +231,10 @@ def channel_shorts(channel_id: str) -> set[str] | None:
 
 
 def shorts_last(entries, channel_id: str | None = None):
-    """일반 영상 먼저, 쇼츠는 맨 뒤로. 담을 게 없을 때의 최후 수단으로만 쇼츠가 쓰인다.
+    """일반 영상만. 최근 목록에 일반 영상이 하나도 없는 채널일 때만 쇼츠를 내준다.
+
+    '담을 게 없을 때'를 '새로 저장할 일반 영상이 없을 때'로 잡으면, 일반 영상을 이미 다 담은
+    채널은 매 수집마다 쇼츠로 넘어간다. 그래서 저장 여부와 무관하게 일반 영상이 있으면 쇼츠는 버린다.
 
     판별은 캐시 → 채널 쇼츠 탭(1요청) → 영상별 HEAD 순으로 값이 싼 것부터 쓴다.
     """
@@ -256,13 +259,8 @@ def shorts_last(entries, channel_id: str | None = None):
         verdicts.update(fallback)
         yt_cache.remember_shorts(fallback)
 
-    deferred = []
-    for entry, video_id in zip(entries, ids):
-        if verdicts.get(video_id):
-            deferred.append(entry)
-        else:
-            yield entry
-    yield from deferred
+    normal = [e for e, v in zip(entries, ids) if not verdicts.get(v)]
+    yield from normal or entries
 
 
 def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int = 3) -> list[str]:
@@ -274,7 +272,7 @@ def scrape_channel(channel_id: str, author: str, subscription: bool, limit: int 
     log = logging.getLogger(__name__)
     log.info(f"피드 엔트리 수: {len(feed.entries)}")
 
-    # limit은 쇼츠 후순위 정렬 뒤에 적용해야 한다. 먼저 자르면 앞쪽 쇼츠 때문에 일반 영상을 놓친다
+    # limit은 쇼츠를 거른 뒤에 적용해야 한다. 먼저 자르면 앞쪽 쇼츠 때문에 일반 영상을 놓친다
     for entry in shorts_last(recent_entries(feed.entries, len(feed.entries)), channel_id):
         if len(saved) >= limit:
             break
