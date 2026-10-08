@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 실사용 앱의 베이지(#E1C38D) 대신 파랑 — 아이콘 배경만으로 테스트 앱임을 알 수 있게 -->
+    <color name="ic_launcher_background">#4A7FE0</color>
+</resources>

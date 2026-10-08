@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 실사용 앱과 나란히 깔리므로 이름 앞머리부터 다르게 — 런처가 뒤를 잘라도 구분된다 -->
+    <string name="app_name">테스트 구독만보</string>
+</resources>
