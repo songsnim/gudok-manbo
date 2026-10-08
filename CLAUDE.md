@@ -39,6 +39,6 @@ Avoid: bot, crawler, AI
 모든 Item의 SSOT. 로컬 Windows PC의 Obsidian Vault이며, Item은 $VAULT_PATH/Resource/gudok-manbo/ 아래 두 폴더 — articles/(Feed)와 collections/(Collection) — 에 <제목>-<slug>.md 로 저장된다. 백엔드 운영 데이터(구독 목록, 앱 설정, 실행 로그)는 Vault에 두지 않고 backend/data/에 남으며 모바일로 동기화되지 않는다. frontmatter에 title, platform, source_url, author, date, subscription 필드를 포함한다. tags는 Curator Agent가 저장 시 $VAULT_PATH/CLAUDE.md의 태그 표 안에서 고른다(표가 SSOT, 실패하면 생략). 본문은 Item 유형에 따라 다르다: 영상은 Curator Agent가 생성한 요약문, 아티클은 스크래핑한 원문 전체. Obsidian Sync를 통해 모바일 Obsidian 앱으로 아카이빙 용도로 동기화된다.
 Avoid: database, storage, repository
 - Widget:  
-안드로이드 홈 화면 컴포넌트. 미읽음 Item 중 최대 6개를 2×3 그리드로 제목과 플랫폼 아이콘으로 표시한다. 제목이 없는 경우 Curator Agent가 생성한다. Jetpack Glance로 구현하며 WorkManager가 1시간 간격으로 갱신한다.  
+안드로이드 홈 화면 컴포넌트. 오늘 수집된 Feed Item 전체를 인앱 피드 행과 같은 모양의 스크롤 목록으로 보여준다. 읽은 Item은 목록에 남고 흐리게 표시된다. 행을 탭하면 앱이 그 Item 본문을 연다. Jetpack Glance로 구현하며 WorkManager가 1시간 간격과 수집 직후에 갱신한다.  
 Avoid: shortcut, tile
 

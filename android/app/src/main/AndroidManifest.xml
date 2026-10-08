@@ -35,6 +35,11 @@
                 android:resource="@xml/feed_widget_info" />
         </receiver>
 
+        <provider
+            android:name=".widget.WidgetImageProvider"
+            android:authorities="${applicationId}.widgetimages"
+            android:exported="true" />
+
     </application>
 
 </manifest>

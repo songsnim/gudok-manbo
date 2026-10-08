@@ -4,14 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class WidgetLogicTest {
-    private fun item(slug: String) = WidgetItem(slug, slug, "youtube", "a")
+    private fun item(slug: String, collected: String) = WidgetItem(slug, slug, "youtube", "a", collected = collected)
 
     @Test
-    fun pickUnreadKeepsOrderSkipsReadAndCaps() {
-        val items = (1..8).map { item("s$it") }  // 수집 최신순
-        val (shown, total) = pickUnread(items, setOf("s1", "s3"), 5)
-        assertEquals(listOf("s2", "s4", "s5", "s6", "s7"), shown.map { it.slug })
-        assertEquals(6, total)
+    fun pickTodayKeepsOrderAndDropsOtherDays() {
+        val items = listOf(item("s1", "2026-10-08"), item("s2", "2026-10-07"), item("s3", "2026-10-08"))
+        assertEquals(listOf("s1", "s3"), pickToday(items, "2026-10-08").map { it.slug })
     }
 
     @Test

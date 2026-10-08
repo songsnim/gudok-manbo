@@ -9,16 +9,15 @@ data class WidgetItem(
     val thumbnailUrl: String? = null,
     val avatarUrl: String? = null,
     val date: String = "",   // 게시일, 없으면 수집일 — 인앱 날짜 줄과 같은 규칙
+    val collected: String = "",  // 수집일 yyyy-MM-dd — 위젯은 오늘 것만 보여준다
 )
 
 /** 마지막 동기화 결과. 렌더 중에는 네트워크를 쓰지 않으므로 이것만 본다. */
 data class WidgetSnapshot(val items: List<WidgetItem>, val hours: List<Int>)
 
-/** 수집 최신순 목록에서 안 읽은 것만 앞에서 n개, 그리고 미읽음 총개수. */
-fun pickUnread(items: List<WidgetItem>, read: Set<String>, n: Int): Pair<List<WidgetItem>, Int> {
-    val unread = items.filterNot { it.slug in read }
-    return unread.take(n) to unread.size
-}
+/** 오늘 수집된 것만, 수집 최신순 그대로. 읽은 것도 남긴다 — 위젯이 흐리게 칠한다. */
+fun pickToday(items: List<WidgetItem>, today: String): List<WidgetItem> =
+    items.filter { it.collected == today }
 
 /** 빈 상태 문구 — 지금 이후 첫 수집 시각, 없으면 내일 첫 시각. */
 fun nextCollectLabel(hours: List<Int>, nowHour: Int): String {
