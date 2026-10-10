@@ -31,7 +31,7 @@ assert len(prompts) == 1 and "둘째 줄" not in prompts[0], prompts
 
 # 한글·영어뿐이면 LLM을 부르지 않는다
 stub({})
-clean = "## 제목\n\n한글과 English, 숫자 42, 기호 -> ! 이모지 😀"
+clean = "## 제목\n\n한글과 English, 숫자 42, 기호 -> ! 이모지 😀 1️⃣"
 assert oc.guard_language(clean) == clean
 assert prompts == [], prompts
 

@@ -17,6 +17,8 @@ _TOKEN = re.compile(r"[^\s!-/:-@\[-`{-~]+")
 def _is_foreign(ch: str) -> bool:
     return unicodedata.category(ch)[0] in "LM" and not (
         ch.isascii() or "가" <= ch <= "힣" or "ᄀ" <= ch <= "ᇿ" or "㄰" <= ch <= "㆏"
+        # 이모지 부속(변형 선택자 U+FE0F, 키캡 U+20E3 등) — 1️⃣ 같은 이모지가 걸리지 않게
+        or "︀" <= ch <= "️" or "⃐" <= ch <= "⃿"
     )
 
 
