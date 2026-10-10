@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import unicodedata
 import httpx
 from config import settings
 
@@ -8,8 +9,16 @@ logger = logging.getLogger(__name__)
 
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# 한국어/영어 외 문자(CJK 한자, 일본어 가나 등). 요약에 섞이면 안 됨.
-_FORBIDDEN_CHARS = re.compile(r"[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]")
+# 한글·영어 알파벳이 아닌 글자(한자, 가나, 키릴, 아랍, 태국, 악센트 라틴 등). 숫자·기호·이모지는 글자가 아니라 안 걸린다.
+# 단어 = 공백·ASCII 기호로 끊은 덩어리. \w로 끊으면 태국어 모음 같은 결합 부호에서 단어가 쪼개진다.
+_TOKEN = re.compile(r"[^\s!-/:-@\[-`{-~]+")
+
+
+def _is_foreign(ch: str) -> bool:
+    return unicodedata.category(ch)[0] in "LM" and not (
+        ch.isascii() or "가" <= ch <= "힣" or "ᄀ" <= ch <= "ᇿ" or "㄰" <= ch <= "㆏"
+    )
+
 
 _ARTICLE_PROMPT = {
     "ko": (
@@ -126,31 +135,75 @@ def _chat(prompt: str, temperature: float = 0.3, **extra) -> str:
     raise RuntimeError(f"모든 모델 실패 — {', '.join(errors)}")
 
 
+_GUARD_PROMPT = """아래 번호 붙은 단어들은 한글·영어가 아닌 글자가 섞인 단어다. 각 단어를 바꿀 말을 정하라.
+- 한자·일본어(가나)가 섞였으면 한국어로 바꾼다. 붙은 한글 조사·어미는 그대로 살린다. 예: 重要한 → 중요한
+- 그 외 글자(러시아어, 아랍어, 태국어, 악센트 붙은 라틴 등)는 영어 단어로 바꾼다. 예: café → cafe
+- 결과에는 한글, 영어 알파벳, 숫자, 기호만 쓴다.
+- 각 단어 옆 문맥은 뜻을 정하는 데만 참고한다.
+
+반드시 아래 JSON만 출력하라 (다른 텍스트 없이). 키는 단어 번호:
+{{"1": "바꾼 말", "2": "바꾼 말"}}
+
+단어와 문맥:
+{words}"""
+
+
+def guard_language(md: str) -> str:
+    """1차 draft에서 한글·영어 아닌 글자가 낀 단어만 골라 그 자리만 바꾼다.
+
+    검출은 코드, 번역은 draft를 모르는 새 _chat 호출이 단어 목록만 보고 한다.
+    치환도 코드가 단어 단위로 하므로 걸린 단어 밖은 한 글자도 바뀌지 않는다.
+    """
+    found = {}
+    for line in md.splitlines():
+        for m in _TOKEN.finditer(line):
+            if any(map(_is_foreign, m.group(0))):
+                found.setdefault(m.group(0), line.strip()[:200])
+    if not found:
+        return md
+
+    words = list(found)
+    listing = "\n".join(f"{i}. {w}  (문맥: {found[w]})" for i, w in enumerate(words, 1))
+    try:
+        content = _chat(_GUARD_PROMPT.format(words=listing), temperature=0, response_format={"type": "json_object"})
+        match = re.search(r"\{.*\}", content, re.S)
+        raw = json.loads(match.group(0) if match else content)
+        # 모델이 단어를 키로 되받아 적으면 글자를 틀린다(非常に → 非常에). 그래서 번호로 받는다.
+        fixes = {w: raw.get(str(i)) for i, w in enumerate(words, 1)}
+    except Exception as e:  # 가드가 죽어도 draft는 살린다 — 아래에서 외국 글자 제거로 떨어진다
+        logger.warning(f"언어 가드 실패, 외국 글자만 지운다: {e}")
+        fixes = {}
+
+    def fix(m: re.Match) -> str:
+        w = m.group(0)
+        if w not in found:
+            return w
+        r = fixes.get(w)
+        # 번역이 없거나 비었거나 또 외국 글자를 뱉었으면 그 글자만 지운다
+        if not isinstance(r, str) or not r.strip() or any(map(_is_foreign, r)):
+            return "".join(c for c in w if not _is_foreign(c))
+        return r.strip()
+
+    logger.info(f"언어 가드: {len(found)}개 단어 치환")
+    return _TOKEN.sub(fix, md)
+
+
 def transcribe_to_article(transcript: str) -> str:
     """영상 자막을 내용 손실 없이 구조화된 글로 재구성."""
     prompt = _ARTICLE_PROMPT[settings.summary_language] + transcript[:60000]
-    return _chat(prompt)
+    return guard_language(_chat(prompt))
 
 
 def summarize_article(body: str) -> str:
-    """웹 아티클 본문을 구조화된 마크다운으로 요약.
-
-    모델이 가끔 한자·가나를 섞으므로, 검출되면 재생성(최대 2회)하고
-    그래도 남으면 해당 문자를 제거해 한국어/영어만 남긴다.
-    """
+    """웹 아티클 본문을 구조화된 마크다운으로 요약."""
     prompt = _SUMMARY_PROMPT[settings.summary_language] + body[:60000]
-    md = _chat(prompt)
-    for _ in range(2):
-        if not _FORBIDDEN_CHARS.search(md):
-            return md
-        md = _chat(prompt)
-    return _FORBIDDEN_CHARS.sub("", md)
+    return guard_language(_chat(prompt))
 
 
 def generate_title(content: str) -> str:
     """글 내용으로 제목 생성."""
     prompt = _TITLE_PROMPT[settings.summary_language] + content[:3000]
-    return _chat(prompt)
+    return guard_language(_chat(prompt))
 
 
 _TAG_PROMPT = """\
