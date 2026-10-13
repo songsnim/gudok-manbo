@@ -137,7 +137,14 @@ interface ApiService {
 
     @POST("feed/add")
     suspend fun addToFeed(@Body body: AddItemRequest): AddItemResult
+
+    /** 내가 쓴 Vault 노트 하나를 무작위로 — 위젯 주사위 버튼. */
+    @GET("lucky")
+    suspend fun getLucky(): LuckyNote
 }
+
+@JsonClass(generateAdapter = true)
+data class LuckyNote(val title: String, val date: String = "", val body: String)
 
 @JsonClass(generateAdapter = true)
 data class SearchResult(

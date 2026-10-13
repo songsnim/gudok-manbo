@@ -4,4 +4,7 @@
         <!-- Compose 로드 전 첫 프레임이 흰색으로 번쩍이지 않게 -->
         <item name="android:windowBackground">#121316</item>
     </style>
+
+    <!-- 위젯 무작위 노트 모달: 창은 투명, 어둡게 덮는 막과 카드는 Compose Dialog가 그린다 -->
+    <style name="Theme.ContentsCurator.Lucky" parent="android:Theme.Translucent.NoTitleBar" />
 </resources>

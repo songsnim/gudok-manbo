@@ -24,6 +24,15 @@
             </intent-filter>
         </activity>
 
+        <!-- 빈 taskAffinity: 앱 본체 task를 앞으로 끌어오지 않고 홈 화면 위에만 뜬다 -->
+        <activity
+            android:name=".widget.LuckyActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.ContentsCurator.Lucky" />
+
         <receiver
             android:name=".widget.FeedWidgetReceiver"
             android:exported="true">

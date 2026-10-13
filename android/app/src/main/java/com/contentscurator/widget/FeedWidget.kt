@@ -29,6 +29,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.contentscurator.MainActivity
+import com.contentscurator.R
 import com.contentscurator.data.ServerResolver
 import com.contentscurator.data.api.RetrofitClient
 import com.contentscurator.data.db.AppDatabase
@@ -57,6 +58,7 @@ private const val MAX_ROWS = 5
 // 하루치만 보여주므로 누적되지 않는다 — 넉넉한 안전 상한. 이미지는 URI로 넘겨 RemoteViews 크기와 무관.
 private const val MAX_ITEMS = 50
 private const val READ_ALPHA = 0.45f   // 인앱 FeedItemRow 읽음 alpha
+private const val BAR_H = 36f          // 하단 바 높이 (실제 화면 dp)
 
 /** 위젯 행 탭 → MainActivity가 이 extra로 본문을 연다. */
 val SlugParam = ActionParameters.Key<String>(MainActivity.EXTRA_SLUG)
@@ -134,9 +136,9 @@ private fun WidgetContent(
     // 실제 화면 기준 크기로 계산한 뒤 s로 위젯 단위로 바꾼다
     val size = LocalSize.current
     val realW = size.width.value * s.ratio
-    // 헤더 없음 — 위아래 패딩 4씩 빼고 전부 행에 쓴다. 5×3(≈280dp)에서 3행이 들어가는 높이.
+    // 헤더 없음 — 위아래 패딩 4씩과 하단 바를 빼고 전부 행에 쓴다.
     // 행 높이를 보이는 칸에 딱 맞춰 두고 나머지는 스크롤로 내린다.
-    val avail = size.height.value * s.ratio - 8f
+    val avail = size.height.value * s.ratio - 8f - BAR_H
     val rows = (avail / 80f).toInt().coerceIn(1, MAX_ROWS)
     val rowH = avail / rows
     // 메타 20 + 2 + 13sp 3줄(≈52) ≈ 74 — 5×3의 행(≈88)에 3줄이 들어간다
@@ -155,7 +157,7 @@ private fun WidgetContent(
     ) {
         if (items.isEmpty()) {
             Column(
-                modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
+                modifier = GlanceModifier.fillMaxWidth().defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -164,7 +166,7 @@ private fun WidgetContent(
                 Text(emptyText, style = TextStyle(color = ColorProvider(Outline), fontSize = s.t(13f)))
             }
         } else {
-            LazyColumn(GlanceModifier.fillMaxSize()) {
+            LazyColumn(GlanceModifier.fillMaxWidth().defaultWeight()) {
                 itemsIndexed(items, itemId = { _, it -> it.slug.hashCode().toLong() }) { i, item ->
                     Column {
                         if (i > 0) Box(GlanceModifier.fillMaxWidth().height(s.d(0.5f)).background(DIVIDER.copy(alpha = bgAlpha))) {}
@@ -176,6 +178,28 @@ private fun WidgetContent(
                 }
             }
         }
+        BottomBar(s)
+    }
+}
+
+/** 투명 하단 바 — 왼쪽 앱 아이콘은 피드 목록, 오른쪽 주사위는 내가 쓴 노트 하나를 모달로. */
+@Composable
+private fun BottomBar(s: Scale) {
+    Row(
+        modifier = GlanceModifier.fillMaxWidth().height(s.d(BAR_H)).padding(horizontal = s.d(10f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BarButton(ImageProvider(R.mipmap.ic_launcher_round), "피드 열기", actionStartActivity<MainActivity>(), s)
+        Spacer(GlanceModifier.defaultWeight())
+        BarButton(ImageProvider(R.drawable.ic_lucky), "무작위 노트", actionStartActivity<LuckyActivity>(), s)
+    }
+}
+
+@Composable
+private fun BarButton(icon: ImageProvider, label: String, onClick: androidx.glance.action.Action, s: Scale) {
+    // 아이콘보다 넓은 탭 영역
+    Box(GlanceModifier.size(s.d(BAR_H)).clickable(onClick), contentAlignment = Alignment.Center) {
+        Image(icon, contentDescription = label, modifier = GlanceModifier.size(s.d(22f)))
     }
 }
 

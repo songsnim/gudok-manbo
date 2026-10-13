@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from vault.reader import get_all_items, get_today_items, get_item, get_collection_items
+from vault.reader import get_all_items, get_today_items, get_item, get_collection_items, random_note
 from agent.curator import load_subscriptions, add_subscription, remove_subscription, enrich_avatars
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -46,6 +46,15 @@ def delete_feed_item(slug: str):
     from vault.writer import delete_item
     if not delete_item(slug):
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없음")
+
+
+@app.get("/lucky")
+def lucky():
+    """위젯 주사위 버튼 — 내가 쓴 노트 하나를 무작위로."""
+    note = random_note()
+    if not note:
+        raise HTTPException(status_code=404, detail="노트가 없음")
+    return note
 
 
 # ── Collections ───────────────────────────────────────────────────────────────
