@@ -34,6 +34,8 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 class MainActivity : ComponentActivity() {
     /** 위젯 행에서 넘어온 slug. 본문을 연 뒤 비운다. */
     private val openSlug = mutableStateOf<String?>(null)
+    /** 앱이 떠 있을 때 위젯에서 다시 들어오면 올린다 — 어느 탭에 있든 피드로 돌아간다. */
+    private val feedRequest = mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,7 +46,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ContentsCuratorTheme {
-                MainNav(openSlug.value) { openSlug.value = null }
+                MainNav(openSlug.value, feedRequest.intValue) { openSlug.value = null }
             }
         }
     }
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(EXTRA_SLUG)?.let { openSlug.value = it }
+        feedRequest.intValue++
     }
 
     companion object {
@@ -61,13 +64,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun MainNav(openSlug: String?, onOpened: () -> Unit) {
+private fun MainNav(openSlug: String?, feedRequest: Int, onOpened: () -> Unit) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentEntry?.destination?.route
 
-    LaunchedEffect(openSlug) {
-        if (openSlug != null && currentRoute != Tab.Feed.route) {
+    LaunchedEffect(openSlug, feedRequest) {
+        if ((openSlug != null || feedRequest > 0) && currentRoute != Tab.Feed.route) {
             navController.navigate(Tab.Feed.route) {
                 popUpTo(navController.graph.startDestinationId) { saveState = true }
                 launchSingleTop = true

@@ -1,6 +1,7 @@
 from datetime import date
 from pathlib import Path
 from typing import Optional
+import random
 import re
 import frontmatter
 
@@ -92,3 +93,32 @@ def get_item(slug: str) -> Optional[dict]:
 
 def count_today() -> int:
     return len(get_today_items())
+
+
+_TAG_LINE = re.compile(r"^(#[^\s#]+\s*)+$")
+
+
+def note_text(content: str) -> str:
+    """Fleeting 노트 본문. '### Idea' 절이 있으면 그 절만, 없으면 전체 — 태그만 있는 줄은 뺀다."""
+    idea = re.search(r"^#+ Idea[ \t]*\n(.*?)(?=^#+ |\Z)", content, re.M | re.S)
+    text = idea.group(1) if idea else content
+    text = "\n".join(l for l in text.splitlines() if not _TAG_LINE.match(l.strip()))
+    # 폰에선 Vault 첨부를 못 여니 임베드는 빼고, 위키링크는 보이는 글자만 남긴다
+    text = re.sub(r"!\[\[[^\]]*\]\]", "", text)
+    text = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", text)
+    return text.strip()
+
+
+def random_note() -> Optional[dict]:
+    """내가 쓴 Fleeting 노트 하나를 무작위로 (I'm feeling lucky). 빈 노트는 건너뛴다."""
+    notes = list((settings.vault_path / "Zettelkasten" / "Fleeting").glob("*.md"))
+    random.shuffle(notes)
+    for f in notes:
+        try:
+            post = frontmatter.load(str(f))
+        except Exception:
+            continue
+        body = note_text(post.content)
+        if len(body) >= 20:
+            return {"title": f.stem, "date": str(post.metadata.get("create", ""))[:10], "body": body}
+    return None
