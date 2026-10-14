@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 RECOMMENDED_ID = "recommended"
 RECOMMENDED_NAME = "추천 영상"
 KEEP_DAYS = 7
-PAGES = 2  # 한 페이지 약 20개
+PAGES = 10  # 한 페이지 약 20개. 홈은 주제가 섞여 있어 많이 받아야 하루 2번 수집에 10여 개가 걸린다
+CHUNK = 50  # 판정 한 번에 보낼 영상 수 — 너무 길면 무료 모델이 번호를 빠뜨린다
 
 _DATA = Path(__file__).parent.parent / "data"
 _COOKIES = _DATA / "youtube_cookies.txt"
@@ -190,9 +191,17 @@ JSON으로만 답하라: {{"keep": [번호, ...]}}"""
 
 
 def pick_topical(videos: list[dict]) -> list[dict]:
-    """한 번의 LLM 호출로 주제에 맞는 것만. 실패하면 예외 — 호출자가 그 회차를 건너뛴다."""
-    if not videos:
-        return []
+    """CHUNK개씩 나눠 판정. 한 묶음이 실패하면 그 묶음만 건너뛴다 — 다음 회차에 다시 묻는다."""
+    picked = []
+    for i in range(0, len(videos), CHUNK):
+        try:
+            picked += _pick_chunk(videos[i:i + CHUNK])
+        except Exception as e:
+            logger.warning(f"추천 영상: 주제 판정 실패, {len(videos[i:i + CHUNK])}개 건너뜀 ({e})")
+    return picked
+
+
+def _pick_chunk(videos: list[dict]) -> list[dict]:
     from llm.openrouter_client import _chat
     listing_ = "\n".join(f"{n}. {v['title']} — {v['author']}" for n, v in enumerate(videos, 1))
     content = _chat(_TOPIC_PROMPT.format(videos=listing_), temperature=0,
@@ -223,11 +232,7 @@ def refresh() -> dict:
 
     known = {i["video_id"] for i in s["items"]} | set(s["dismissed"])
     fresh = [v for v in home if v["video_id"] not in known and get_item(_make_slug(v["video_id"])) is None]
-    try:
-        picked = pick_topical(fresh)
-    except Exception as e:
-        logger.warning(f"추천 영상: 주제 판정 실패, 이번 회차 건너뜀 ({e})")
-        picked = []
+    picked = pick_topical(fresh)
     now = time.time()
     s["items"] = [{**v, "found": str(date.today()), "ts": now} for v in picked] + s["items"]
     _save(s)
