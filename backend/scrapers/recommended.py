@@ -31,7 +31,8 @@ CHUNK = 50  # 판정 한 번에 보낼 영상 수 — 너무 길면 무료 모�
 _DATA = Path(__file__).parent.parent / "data"
 _COOKIES = _DATA / "youtube_cookies.txt"
 _STORE = _DATA / "recommended.json"
-COOKIE_DEAD = "YouTube 쿠키가 만료됐습니다. PC 브라우저에서 youtube.com 쿠키를 다시 내보내 backend/data/youtube_cookies.txt에 넣어 주세요."
+# 시크릿 창 세션은 브라우저가 다시 건드리지 않아 서버만 갱신해 가며 오래 쓴다
+COOKIE_DEAD = "YouTube 쿠키가 만료됐습니다. PC Chrome 시크릿 창에서 로그인 → youtube.com 쿠키 내보내기 → 창 닫기 후 backend/data/youtube_cookies.txt에 넣어 주세요."
 
 # 라이브 중·예정·지난 라이브. 지난 라이브는 길고 잡담이 많아 요약 가치가 낮다
 _LIVE_RE = re.compile(r"watching|Streamed|Scheduled for|Premieres|LIVE", re.I)
