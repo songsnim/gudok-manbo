@@ -1,4 +1,5 @@
 import logging
+import re
 
 import feedparser
 import httpx
@@ -161,8 +162,14 @@ def add_item(item: dict) -> dict:
         title = item.get("title") or generate_title(transcript)
         # 미리보기의 date는 "3일 전" 같은 상대 표기다. 일 단위 이하면 그대로 환산되므로
         # watch 페이지를 부르지 않는다 — 주·개월·년 표기일 때만 물어본다
-        published = published_from_relative(item.get("date", "")) or video_published(video_id)
-        write_item(slug, title, "youtube", url, author, body, subscription=True,
+        # 추천 목록은 발견 시점에 이미 날짜로 환산해 둔다
+        shown = item.get("date", "")
+        published = (shown if re.fullmatch(r"\d{4}-\d{2}-\d{2}", shown)
+                     else published_from_relative(shown)) or video_published(video_id)
+        from scrapers.recommended import is_recommended, RECOMMENDED_NAME
+        # 추천에서 담은 것은 구독이 아니므로 출처를 남긴다 (reader는 bool로 읽는다)
+        via = RECOMMENDED_NAME if is_recommended(video_id) else True
+        write_item(slug, title, "youtube", url, author, body, subscription=via,
                    published=published)
         return {"status": "added", "slug": slug}
 

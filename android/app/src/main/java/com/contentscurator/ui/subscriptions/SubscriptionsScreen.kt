@@ -134,6 +134,11 @@ fun platformLabel(platform: String): String = when (platform.lowercase()) {
     else -> platform
 }
 
+/** 홈 피드 추천 중 AI/ML/Dev 영상만 모아 둔 가상 구독. id는 서버 RECOMMENDED_ID와 같다. */
+val RecommendedSub = Subscription(
+    id = "recommended", platform = "youtube", author = "추천 영상", channel_id = null, feed_url = null,
+)
+
 // ── ViewModel ─────────────────────────────────────────────────────────────────
 
 class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
@@ -165,6 +170,12 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
     val previewLoadingMore: StateFlow<Boolean> = _previewLoadingMore
 
     private var previewCursor: String? = null
+
+    private val _previewNotice = MutableStateFlow<String?>(null)
+    val previewNotice: StateFlow<String?> = _previewNotice
+
+    private val _recommendedNew = MutableStateFlow(0)
+    val recommendedNew: StateFlow<Int> = _recommendedNew
 
     private val _addingUrls = MutableStateFlow<Set<String>>(emptySet())
     val addingUrls: StateFlow<Set<String>> = _addingUrls
@@ -212,6 +223,7 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
             _subscribedIds.value = subs.mapNotNull { it.channel_id }.toSet() +
                 subs.mapNotNull { it.feed_url }.toSet()
         }
+        runCatching { _recommendedNew.value = repo.recommendedNew() }
     }
 
     fun add(req: SubscriptionRequest) = viewModelScope.launch {
@@ -247,10 +259,14 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
         _previewSub.value = sub
         _previewItems.value = emptyList()
         _addedUrls.value = emptySet()
+        _previewNotice.value = null
         previewCursor = null
         _previewLoading.value = true
         runCatching { repo.preview(sub.id) }
-            .onSuccess { _previewItems.value = it.items; previewCursor = it.next_cursor }
+            .onSuccess {
+                _previewItems.value = it.items; previewCursor = it.next_cursor; _previewNotice.value = it.notice
+                if (sub.id == RecommendedSub.id) _recommendedNew.value = 0  // 서버도 열람 시각을 기록한다
+            }
             .onFailure { _toast.value = "미리보기 실패: ${it.message}" }
         _previewLoading.value = false
     }
@@ -279,6 +295,15 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
         previewCursor = null
     }
 
+    /** 추천 영상 "관심 없음". 실패하면 목록에 되돌린다. */
+    fun dismissRecommended(item: PreviewItem) = viewModelScope.launch {
+        val videoId = item.video_id ?: return@launch
+        val before = _previewItems.value
+        _previewItems.value = before - item
+        runCatching { repo.dismissRecommended(videoId) }
+            .onFailure { _previewItems.value = before; _toast.value = "치우기 실패: ${it.message}" }
+    }
+
     fun addToFeed(item: PreviewItem) = viewModelScope.launch {
         _addingUrls.value = _addingUrls.value + item.source_url
         runCatching { repo.addToFeed(item) }
@@ -302,6 +327,7 @@ class SubscriptionsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
     val items by vm.items.collectAsStateWithLifecycle()
+    val recommendedNew by vm.recommendedNew.collectAsStateWithLifecycle()
     val previewSub by vm.previewSub.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
@@ -343,6 +369,19 @@ fun SubscriptionsScreen(vm: SubscriptionsViewModel = viewModel()) {
             ),
             modifier = Modifier.fillMaxSize()
         ) {
+            // 가상 구독 — 맨 위 고정. 삭제·우선순위가 없고 자동 수집 대상도 아니다
+            item(key = RecommendedSub.id) {
+                ListItem(
+                    modifier = Modifier.clickable { vm.openPreview(RecommendedSub) },
+                    leadingContent = { PlatformBadge(RecommendedSub.platform, size = 28) },
+                    headlineContent = { Text(RecommendedSub.author, fontWeight = FontWeight.Medium) },
+                    supportingContent = { Text("홈 피드 중 AI·ML·Data·Dev·Math·Agent", fontSize = 12.sp) },
+                    trailingContent = {
+                        if (recommendedNew > 0) Badge { Text("$recommendedNew") }
+                    },
+                )
+                HorizontalDivider()
+            }
             items(items, key = { it.id }) { sub ->
                 ListItem(
                     modifier = Modifier.clickable { vm.openPreview(sub) },
@@ -502,6 +541,8 @@ private fun PreviewDialog(
     val loadingMore by vm.previewLoadingMore.collectAsStateWithLifecycle()
     val addingUrls by vm.addingUrls.collectAsStateWithLifecycle()
     val addedUrls by vm.addedUrls.collectAsStateWithLifecycle()
+    val notice by vm.previewNotice.collectAsStateWithLifecycle()
+    val isRecommended = sub.id == RecommendedSub.id
     val listState = rememberLazyListState()
 
     // 끝에서 5개 남으면 다음 페이지 요청
@@ -524,12 +565,23 @@ private fun PreviewDialog(
             }
         },
         text = {
+          Column {
+            notice?.let {
+                Text(
+                    it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.small)
+                        .padding(12.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             when {
                 loading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
                 items.isEmpty() -> Text(
-                    "미리보기를 가져올 수 없습니다.\n(LinkedIn은 쿠키 설정 필요)",
+                    if (isRecommended) "아직 모인 추천 영상이 없습니다.\n다음 수집 시각에 홈 피드에서 가져옵니다."
+                    else "미리보기를 가져올 수 없습니다.\n(LinkedIn은 쿠키 설정 필요)",
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
@@ -540,12 +592,16 @@ private fun PreviewDialog(
                 ) {
                     items(items, key = { it.source_url }) { item ->
                         val added = item.in_feed || item.source_url in addedUrls
-                        PreviewRow(
-                            item = item,
-                            added = added,
-                            adding = item.source_url in addingUrls,
-                            onAdd = { vm.addToFeed(item) },
-                        )
+                        val row = @Composable {
+                            PreviewRow(
+                                item = item,
+                                added = added,
+                                adding = item.source_url in addingUrls,
+                                onAdd = { vm.addToFeed(item) },
+                            )
+                        }
+                        if (isRecommended) DismissibleRow(onDismiss = { vm.dismissRecommended(item) }, content = row)
+                        else row()
                         HorizontalDivider()
                     }
                     if (loadingMore) item {
@@ -555,9 +611,32 @@ private fun PreviewDialog(
                     }
                 }
             }
+          }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/** 옆으로 밀면 "관심 없음". 양방향 모두 같은 뜻. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DismissibleRow(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = {
+        if (it != SwipeToDismissBoxValue.Settled) onDismiss()
+        it != SwipeToDismissBoxValue.Settled
+    })
+    SwipeToDismissBox(
+        state = state,
+        backgroundContent = {
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart)
+                    Alignment.CenterEnd else Alignment.CenterStart,
+            ) { Text("관심 없음", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline) }
+        },
+    ) {
+        Box(Modifier.background(AlertDialogDefaults.containerColor)) { content() }
+    }
 }
 
 @Composable

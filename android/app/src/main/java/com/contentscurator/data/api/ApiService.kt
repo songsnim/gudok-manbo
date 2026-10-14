@@ -135,6 +135,13 @@ interface ApiService {
         @Query("cursor") cursor: String? = null,
     ): PreviewResponse
 
+    @GET("recommended/status")
+    suspend fun recommendedStatus(): RecommendedStatus
+
+    /** 추천 영상 "관심 없음" — 다시 추천돼도 안 보인다. */
+    @DELETE("recommended/{videoId}")
+    suspend fun dismissRecommended(@Path("videoId") videoId: String)
+
     @POST("feed/add")
     suspend fun addToFeed(@Body body: AddItemRequest): AddItemResult
 
@@ -176,7 +183,14 @@ data class PreviewItem(
 )
 
 @JsonClass(generateAdapter = true)
-data class PreviewResponse(val items: List<PreviewItem>, val next_cursor: String? = null)
+data class PreviewResponse(
+    val items: List<PreviewItem>,
+    val next_cursor: String? = null,
+    val notice: String? = null,  // 추천 영상: 쿠키 만료 안내
+)
+
+@JsonClass(generateAdapter = true)
+data class RecommendedStatus(val new: Int = 0)
 
 @JsonClass(generateAdapter = true)
 data class AddItemRequest(

@@ -83,6 +83,10 @@ class FeedRepository(private val db: AppDatabase) {
     suspend fun preview(subId: String, cursor: String? = null): PreviewResponse =
         RetrofitClient.api.preview(subId, cursor)
 
+    suspend fun recommendedNew(): Int = RetrofitClient.api.recommendedStatus().new
+
+    suspend fun dismissRecommended(videoId: String) = RetrofitClient.api.dismissRecommended(videoId)
+
     suspend fun addToFeed(item: PreviewItem): AddItemResult =
         RetrofitClient.api.addToFeed(AddItemRequest(
             platform = item.platform,

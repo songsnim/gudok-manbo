@@ -9,6 +9,7 @@ backend/data/*.jsonl
 backend/data/*.db
 backend/data/*.log
 backend/data/tunnel_url.txt
+backend/data/youtube_cookies.txt
 backend/data/logs/
 !backend/data/subscriptions.example.json
 

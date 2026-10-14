@@ -17,7 +17,7 @@ def write_item(
     source_url: str,
     author: str,
     body: str,
-    subscription: bool,
+    subscription: bool | str,
     published: str = "",
 ) -> Path:
     settings.articles_path.mkdir(parents=True, exist_ok=True)

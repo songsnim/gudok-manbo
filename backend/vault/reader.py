@@ -51,7 +51,7 @@ def _parse_file(path: Path) -> Optional[dict]:
             "author": meta.get("author", ""),
             "date": str(meta.get("date", "")),
             "published": str(meta.get("published", "")),
-            "subscription": meta.get("subscription", False),
+            "subscription": bool(meta.get("subscription", False)),  # 추천에서 담은 것은 "추천 영상"
             "body": post.content,
         }
     except Exception:

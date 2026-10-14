@@ -72,6 +72,13 @@ def main() -> None:
         error = f"만료 정리 실패 — {type(e).__name__}: {e}"
         log.exception("만료 정리 중 오류")
 
+    # 홈 피드 추천 목록 — Feed에는 쓰지 않으므로 자동 수집 on/off와 무관하게 돈다
+    try:
+        from scrapers.recommended import refresh
+        refresh()
+    except Exception:
+        log.exception("추천 영상 갱신 중 오류")
+
     if not cfg.get("auto_collect", True):
         log.info("자동 수집 꺼짐 (auto_collect=false) — 수집 건너뜀")
         append_run(target=None, collected=0, trigger="skipped", expired=expired, error=error)

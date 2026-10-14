@@ -127,11 +127,28 @@ def delete_subscription(sub_id: str):
 @app.get("/subscriptions/{sub_id}/preview")
 def preview_subscription(sub_id: str, cursor: Optional[str] = None):
     """구독 소스의 글/영상 목록 (저장 없음). cursor로 이전 영상 이어 로드."""
+    from scrapers import recommended
+    if sub_id == recommended.RECOMMENDED_ID:  # 가상 구독 — 홈 피드 추천 목록
+        return recommended.listing(mark_seen=not cursor)
     sub = next((s for s in load_subscriptions() if s.get("id") == sub_id), None)
     if not sub:
         raise HTTPException(status_code=404, detail="구독을 찾을 수 없음")
     from scrapers.preview import preview_source
     return preview_source(sub, cursor=cursor)
+
+
+@app.get("/recommended/status")
+def recommended_status():
+    """구독 관리 화면의 "추천 영상" 행에 띄울 새 영상 개수."""
+    from scrapers.recommended import new_count
+    return {"new": new_count()}
+
+
+@app.delete("/recommended/{video_id}", status_code=204)
+def dismiss_recommended(video_id: str):
+    """관심 없음 — 목록에서 빼고 다시 추천돼도 무시한다."""
+    from scrapers.recommended import dismiss
+    dismiss(video_id)
 
 
 class AddItemIn(BaseModel):
