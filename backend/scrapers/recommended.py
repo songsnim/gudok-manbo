@@ -100,11 +100,15 @@ def listing(mark_seen: bool = True) -> dict:
 
 # ── 홈 피드 ───────────────────────────────────────────────────────────────────
 
-def _auth_headers() -> dict:
+def _load_jar() -> http.cookiejar.MozillaCookieJar:
     if not _COOKIES.exists():
         raise CookieDead("쿠키 파일 없음")
     jar = http.cookiejar.MozillaCookieJar(str(_COOKIES))
     jar.load(ignore_discard=True, ignore_expires=True)
+    return jar
+
+
+def _auth_headers(jar: http.cookiejar.CookieJar) -> dict:
     c = {k.name: k.value for k in jar if "youtube.com" in k.domain}
     sapisid = c.get("SAPISID") or c.get("__Secure-3PAPISID")
     if not sapisid:
@@ -117,7 +121,6 @@ def _auth_headers() -> dict:
         "X-Origin": "https://www.youtube.com",
         "Origin": "https://www.youtube.com",
         "X-Goog-AuthUser": "0",
-        "Cookie": "; ".join(f"{k}={v}" for k, v in c.items()),
     }
 
 
@@ -139,8 +142,11 @@ def _parse(grid: list[dict]) -> tuple[list[dict], str | None]:
         if any(_LIVE_RE.search(t) for row in parts[1:] for t in row) or "_LIVE" in badges:
             continue
         raw_date = parts[1][-1] if len(parts) > 1 and parts[1] else ""
+        # 채널 아바타 탭 동작에 채널 ID가 들어 있다 — 구독 채널을 이름이 아니라 ID로 거르기 위함
+        channel = re.search(r'"browseId": "(UC[\w-]{22})"', json.dumps(meta.get("image", {})))
         videos.append({
             "video_id": lv["contentId"],
+            "channel_id": channel.group(1) if channel else "",
             "title": meta.get("title", {}).get("content", ""),
             "author": parts[0][0] if parts and parts[0] else "",
             # 상대 표기("4 hours ago")는 며칠 지나면 틀린다 — 환산되면 날짜로 박아 둔다
@@ -150,12 +156,24 @@ def _parse(grid: list[dict]) -> tuple[list[dict], str | None]:
 
 
 def fetch_home(pages: int = PAGES) -> list[dict]:
-    headers = _auth_headers()
+    """홈 피드 일반 영상. 응답이 갱신해 주는 세션 쿠키를 파일에 되써서 세션을 이어 간다.
+
+    되쓰지 않으면 처음 내보낸 쿠키 그대로 쓰다가 Google이 세션 쿠키를 교체하는 순간 로그아웃된다.
+    """
+    jar = _load_jar()
+    try:
+        with httpx.Client(cookies=jar, headers=_auth_headers(jar), timeout=20) as client:
+            return _fetch_pages(client, pages)
+    finally:
+        jar.save(ignore_discard=True, ignore_expires=True)
+
+
+def _fetch_pages(client: httpx.Client, pages: int) -> list[dict]:
     body = {"context": _INNERTUBE_CTX, "browseId": "FEwhat_to_watch"}
     videos = []
     for _ in range(pages):
-        r = httpx.post("https://www.youtube.com/youtubei/v1/browse", params={"prettyPrint": "false"},
-                       json=body, headers=headers, timeout=20)
+        r = client.post("https://www.youtube.com/youtubei/v1/browse", params={"prettyPrint": "false"},
+                         json=body)
         if r.status_code in (401, 403):
             raise CookieDead(f"HTTP {r.status_code}")
         r.raise_for_status()
@@ -214,10 +232,21 @@ def _pick_chunk(videos: list[dict]) -> list[dict]:
 
 # ── 갱신 (수집 스케줄에서 호출) ───────────────────────────────────────────────
 
+def _subscribed(v: dict, sub_ids: set, sub_names: set) -> bool:
+    """채널 ID가 없을 때(파싱 실패)를 대비해 이름도 본다."""
+    return v.get("channel_id") in sub_ids or v["author"].strip() in sub_names
+
+
 def refresh() -> dict:
     s = _load()
     cutoff = str(date.today() - timedelta(days=KEEP_DAYS))
     s["items"] = [i for i in s["items"] if i["found"] >= cutoff]
+    from agent.curator import load_subscriptions
+    subs = [x for x in load_subscriptions() if x.get("platform") == "youtube"]
+    sub_ids = {x.get("channel_id") for x in subs} - {None, ""}
+    sub_names = {x.get("author", "").strip() for x in subs} - {""}
+    # 구독 채널 영상은 정기 수집이 이미 맡는다. 나중에 구독한 채널의 쌓인 영상도 여기서 빠진다
+    s["items"] = [i for i in s["items"] if not _subscribed(i, sub_ids, sub_names)]
     month = str(date.today() - timedelta(days=30))
     s["dismissed"] = {v: d for v, d in s["dismissed"].items() if d >= month}
 
@@ -230,6 +259,7 @@ def refresh() -> dict:
         _save(s)
         return {"added": 0, "error": s["error"]}
 
+    home = [v for v in home if not _subscribed(v, sub_ids, sub_names)]
     known = {i["video_id"] for i in s["items"]} | set(s["dismissed"])
     fresh = [v for v in home if v["video_id"] not in known and get_item(_make_slug(v["video_id"])) is None]
     picked = pick_topical(fresh)

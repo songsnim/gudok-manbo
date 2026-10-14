@@ -13,6 +13,8 @@ def lockup(vid, rows, kind="LOCKUP_CONTENT_TYPE_VIDEO", image=None):
         "contentId": vid, "contentType": kind, "contentImage": image or {},
         "metadata": {"lockupMetadataViewModel": {
             "title": {"content": f"title-{vid}"},
+            "image": {"decoratedAvatarViewModel": {"rendererContext": {"commandContext": {"onTap": {
+                "innertubeCommand": {"browseEndpoint": {"browseId": "UC" + "a" * 22}}}}}}},
             "metadata": {"contentMetadataViewModel": {"metadataRows": [
                 {"metadataParts": [{"text": {"content": t}} for t in row]} for row in rows]}},
         }},
@@ -33,6 +35,7 @@ grid = [
 videos, cursor = r._parse(grid)
 assert [v["video_id"] for v in videos] == ["v1"], videos
 assert videos[0]["author"] == "채널A" and videos[0]["date"] == "2 weeks ago"
+assert videos[0]["channel_id"] == "UC" + "a" * 22
 assert cursor == "T"
 
 # refresh: 판정 통과분만 쌓이고, 이미 있는 것·치운 것은 다시 판정하지 않는다
@@ -49,11 +52,24 @@ assert r.new_count() == 0  # 열어 봤으니 0
 r.refresh()
 assert judged[-1] == ["b"], judged  # a는 치움, c는 이미 있음 — b만 다시 묻는다
 
+# 구독 채널 영상은 채널 ID나 이름이 같으면 빠진다 — 이미 쌓인 것도
+import agent.curator
+agent.curator.load_subscriptions = lambda: [
+    {"platform": "youtube", "author": "구독채널", "channel_id": "UC" + "x" * 22}]
+home[:] = [{"video_id": "d", "title": "d", "author": "다른이름", "date": "", "channel_id": "UC" + "x" * 22},
+           {"video_id": "e", "title": "e", "author": "구독채널", "date": "", "channel_id": ""},
+           {"video_id": "f", "title": "f", "author": "새채널", "date": "", "channel_id": "UCy"}]
+r._save({**r._load(), "items": r._load()["items"] + [
+    {"video_id": "old", "title": "o", "author": "구독채널", "date": "", "found": "2099-01-01", "ts": 0}]})
+r.refresh()
+assert judged[-1] == ["f"], judged
+assert "old" not in [i["video_id"] for i in r._load()["items"]]
+
 # 쿠키가 죽으면 목록은 남기고 배너만 띄운다
 def dead():
     raise r.CookieDead("loggedOut")
 r.fetch_home = dead
 assert r.refresh()["error"] == r.COOKIE_DEAD
-assert r.listing()["notice"] == r.COOKIE_DEAD and [i["video_id"] for i in r.listing()["items"]] == ["c"]
+assert r.listing()["notice"] == r.COOKIE_DEAD and [i["video_id"] for i in r.listing()["items"]] == ["f", "c"]
 
 print("ok")
